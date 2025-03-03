@@ -100,9 +100,7 @@ const sampleDuas = [
 // Popular Du'a websites
 const duaWebsites = [
   { name: 'Duas.org', url: 'https://duas.org/' },
-  { name: 'Hisnul Muslim', url: 'https://play.google.com/store/apps/details?id=com.greentech.hisnulmuslim' },
-  { name: 'MyDua.org', url: 'https://mydua.org/' },
-  { name: 'Sunnah.com', url: 'https://sunnah.com/' }
+  { name: 'Al-Islam.org', url: 'https://www.al-islam.org/tags/dua-supplication' }
 ];
 
 const DuaTracker: React.FC = () => {
