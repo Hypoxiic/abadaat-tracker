@@ -1,0 +1,31 @@
+/*
+ * Minimal global CSS. Everything else is handled by the Chakra theme
+ * (src/theme/index.ts) — the previous version had two competing stylesheets,
+ * one of which hard-coded a light background and broke dark mode.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+/* Charts must never force the page to scroll sideways. */
+canvas {
+  max-width: 100%;
+}

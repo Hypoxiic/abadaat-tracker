@@ -1,275 +1,494 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  Badge,
   Box,
-  Container,
-  Heading,
-  Text,
-  Card,
-  CardHeader,
-  CardBody,
   Button,
-  HStack,
-  VStack,
+  Circle,
+  Flex,
   FormControl,
   FormLabel,
+  HStack,
+  Heading,
+  Icon,
+  IconButton,
   Input,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
+  NumberDecrementStepper,
+  NumberIncrementStepper,
   NumberInput,
   NumberInputField,
   NumberInputStepper,
-  NumberIncrementStepper,
-  NumberDecrementStepper,
-  Select,
+  Progress,
+  SimpleGrid,
   Stat,
   StatLabel,
   StatNumber,
-  StatHelpText,
+  Text,
+  VStack,
+  useDisclosure,
   useToast,
-  IconButton,
-  Flex,
-  Spacer,
-  Badge,
-  SimpleGrid,
-  Divider,
-  useColorModeValue
 } from '@chakra-ui/react';
-import { format } from 'date-fns';
-import { AddIcon, MinusIcon } from '@chakra-ui/icons';
+import { FiMinus, FiPlus, FiRotateCcw, FiSettings, FiTrash2, FiX } from 'react-icons/fi';
+import { FaRegStar } from 'react-icons/fa';
+import PageHeader from '../components/ui/PageHeader';
+import { SectionCard } from '../components/ui/Cards';
+import DateNavigator from '../components/DateNavigator';
+import { useActions, useAppState } from '../hooks/appState';
+import { todayKey } from '../lib/dates';
+import { getDay, totalDhikr, totalsForRange } from '../lib/stats';
+import { newId } from '../lib/store';
+import { TASBIH_AL_ZAHRA_IDS } from '../data/dhikr';
+import type { DhikrPreset } from '../lib/types';
 
-interface DhikrItem {
-  id: string;
-  name: string;
-  count: number;
-}
-
-interface DhikrData {
-  items: DhikrItem[];
-  totalCount: number;
-  lastUpdated: string;
-}
+const vibrate = (pattern: number | number[]) => {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(pattern);
+    }
+  } catch {
+    /* vibration is a nicety, never a requirement */
+  }
+};
 
 const DhikrTracker: React.FC = () => {
-  const [dhikrData, setDhikrData] = useState<DhikrData>({
-    items: [
-      { id: '1', name: 'SubhanAllah', count: 0 },
-      { id: '2', name: 'Alhamdulillah', count: 0 },
-      { id: '3', name: 'Allahu Akbar', count: 0 },
-      { id: '4', name: 'Astaghfirullah', count: 0 },
-    ],
-    totalCount: 0,
-    lastUpdated: new Date().toISOString(),
-  });
-
-  const [newDhikrName, setNewDhikrName] = useState<string>('');
-  
+  const state = useAppState();
+  const actions = useActions();
   const toast = useToast();
-  const cardBg = useColorModeValue('white', 'gray.700');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const editor = useDisclosure();
+  const [dateKey, setDateKey] = useState<string>(todayKey());
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<DhikrPreset | null>(null);
 
-  useEffect(() => {
-    // Load dhikr data from localStorage
-    const loadDhikrData = () => {
-      const savedData = localStorage.getItem('dhikrData');
-      if (savedData) {
-        setDhikrData(JSON.parse(savedData));
-      }
-    };
+  const day = getDay(state, dateKey);
+  const total = totalDhikr(day);
+  const weekly = useMemo(() => totalsForRange(state, 7), [state]);
+  const presets = state.dhikrPresets.filter((preset) => !preset.hidden);
+  const focused = presets.find((preset) => preset.id === focusId) ?? null;
+  const goal = state.settings.goals.dhikrCount;
 
-    loadDhikrData();
-  }, []);
+  const increment = (id: string, delta = 1) => {
+    actions.adjustDhikr(dateKey, id, delta);
+    if (delta > 0) vibrate(12);
+  };
 
-  const handleIncrement = (id: string) => {
-    const updatedItems = dhikrData.items.map(item => 
-      item.id === id ? { ...item, count: item.count + 1 } : item
+  const openEditor = (preset?: DhikrPreset) => {
+    setDraft(
+      preset ?? {
+        id: newId('dhikr'),
+        name: '',
+        arabic: '',
+        transliteration: '',
+        translation: '',
+        target: 33,
+        colorScheme: 'brand',
+        builtIn: false,
+        hidden: false,
+      },
     );
-    
-    const totalCount = updatedItems.reduce((sum, item) => sum + item.count, 0);
-    
-    const updatedData = {
-      ...dhikrData,
-      items: updatedItems,
-      totalCount,
-      lastUpdated: new Date().toISOString(),
-    };
-    
-    setDhikrData(updatedData);
-    localStorage.setItem('dhikrData', JSON.stringify(updatedData));
+    editor.onOpen();
   };
 
-  const handleDecrement = (id: string) => {
-    const updatedItems = dhikrData.items.map(item => 
-      item.id === id && item.count > 0 ? { ...item, count: item.count - 1 } : item
-    );
-    
-    const totalCount = updatedItems.reduce((sum, item) => sum + item.count, 0);
-    
-    const updatedData = {
-      ...dhikrData,
-      items: updatedItems,
-      totalCount,
-      lastUpdated: new Date().toISOString(),
-    };
-    
-    setDhikrData(updatedData);
-    localStorage.setItem('dhikrData', JSON.stringify(updatedData));
+  const saveDraft = () => {
+    if (!draft || !draft.name.trim()) return;
+    actions.upsertDhikrPreset({ ...draft, name: draft.name.trim() });
+    editor.onClose();
+    toast({ title: 'Dhikr saved', status: 'success', duration: 1800, position: 'bottom' });
   };
 
-  const handleReset = (id: string) => {
-    const updatedItems = dhikrData.items.map(item => 
-      item.id === id ? { ...item, count: 0 } : item
-    );
-    
-    const totalCount = updatedItems.reduce((sum, item) => sum + item.count, 0);
-    
-    const updatedData = {
-      ...dhikrData,
-      items: updatedItems,
-      totalCount,
-      lastUpdated: new Date().toISOString(),
-    };
-    
-    setDhikrData(updatedData);
-    localStorage.setItem('dhikrData', JSON.stringify(updatedData));
-    
-    toast({
-      title: 'Counter Reset',
-      description: 'The dhikr counter has been reset to 0.',
-      status: 'info',
-      duration: 3000,
-      isClosable: true,
-    });
-  };
+  const tasbihSequence = TASBIH_AL_ZAHRA_IDS.map((id) => ({
+    preset: presets.find((item) => item.id === id),
+    count: day.dhikr[id] ?? 0,
+  })).filter((item) => item.preset);
 
-  const handleAddNewDhikr = () => {
-    if (!newDhikrName.trim()) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a name for the dhikr.',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-      return;
-    }
-    
-    const newId = (dhikrData.items.length + 1).toString();
-    
-    const updatedData = {
-      ...dhikrData,
-      items: [
-        ...dhikrData.items,
-        { id: newId, name: newDhikrName, count: 0 }
-      ],
-      lastUpdated: new Date().toISOString(),
-    };
-    
-    setDhikrData(updatedData);
-    localStorage.setItem('dhikrData', JSON.stringify(updatedData));
-    setNewDhikrName('');
-    
-    toast({
-      title: 'Dhikr Added',
-      description: `"${newDhikrName}" has been added to your dhikr list.`,
-      status: 'success',
-      duration: 3000,
-      isClosable: true,
-    });
-  };
-
-  const handleResetAll = () => {
-    const resetItems = dhikrData.items.map(item => ({ ...item, count: 0 }));
-    
-    const updatedData = {
-      ...dhikrData,
-      items: resetItems,
-      totalCount: 0,
-      lastUpdated: new Date().toISOString(),
-    };
-    
-    setDhikrData(updatedData);
-    localStorage.setItem('dhikrData', JSON.stringify(updatedData));
-    
-    toast({
-      title: 'All Counters Reset',
-      description: 'All dhikr counters have been reset to 0.',
-      status: 'info',
-      duration: 3000,
-      isClosable: true,
-    });
-  };
+  const tasbihComplete = tasbihSequence.every(
+    (item) => item.preset && item.count >= item.preset.target,
+  );
 
   return (
     <Box>
-      <Heading mb={6}>Dhikr Tracker</Heading>
-      
-      <Text fontSize="lg" mb={4}>
-        Today is {format(new Date(), 'EEEE, MMMM d, yyyy')}
-      </Text>
-      
-      <Card bg={cardBg} borderWidth="1px" borderColor={borderColor} borderRadius="lg" mb={6}>
-        <CardHeader pb={2}>
-          <Heading size="md">Your Dhikr Counters</Heading>
-          <Text color="gray.500" fontSize="sm">
-            Total count: {dhikrData.totalCount}
-          </Text>
-        </CardHeader>
-        <CardBody>
-          <VStack align="stretch" spacing={4}>
-            {dhikrData.items.map((item) => (
-              <HStack key={item.id} justify="space-between" p={3} borderWidth="1px" borderRadius="md" borderColor={borderColor}>
-                <Text fontWeight="bold">{item.name}</Text>
-                <HStack>
-                  <IconButton
-                    aria-label="Decrement"
-                    icon={<MinusIcon />}
-                    size="sm"
-                    onClick={() => handleDecrement(item.id)}
-                    isDisabled={item.count === 0}
-                  />
-                  <Text fontWeight="bold" minW="40px" textAlign="center">
-                    {item.count}
+      <PageHeader
+        eyebrow="Dhikr"
+        title="Remembrance"
+        description="Counters reset each day, so every day's remembrance is recorded separately."
+        actions={<DateNavigator value={dateKey} onChange={setDateKey} />}
+      />
+
+      <SimpleGrid columns={{ base: 1, lg: 3 }} spacing={{ base: 4, md: 5 }} mb={{ base: 4, md: 5 }}>
+        <Box gridColumn={{ lg: 'span 2' }}>
+          {focused ? (
+            <SectionCard
+              title={focused.name}
+              subtitle={focused.translation}
+              icon={FaRegStar}
+              action={
+                <IconButton
+                  aria-label="Close focus mode"
+                  icon={<Icon as={FiX} />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setFocusId(null)}
+                />
+              }
+            >
+              <VStack spacing={5}>
+                {focused.arabic && (
+                  <Text className="arabic" fontSize="2xl" textAlign="center">
+                    {focused.arabic}
                   </Text>
-                  <IconButton
-                    aria-label="Increment"
-                    icon={<AddIcon />}
-                    size="sm"
-                    onClick={() => handleIncrement(item.id)}
-                  />
-                  <Button size="sm" onClick={() => handleReset(item.id)} ml={2}>
+                )}
+
+                <Circle
+                  as="button"
+                  type="button"
+                  size={{ base: '200px', md: '240px' }}
+                  bgGradient="linear(to-br, brand.500, brand.700)"
+                  color="white"
+                  onClick={() => increment(focused.id)}
+                  onKeyDown={(event: React.KeyboardEvent) => {
+                    if (event.key === ' ' || event.key === 'Enter') {
+                      event.preventDefault();
+                      increment(focused.id);
+                    }
+                  }}
+                  aria-label={`Count ${focused.name}. Currently ${day.dhikr[focused.id] ?? 0}${
+                    focused.target ? ` of ${focused.target}` : ''
+                  }.`}
+                  transition="transform 0.08s ease"
+                  _active={{ transform: 'scale(0.96)' }}
+                  boxShadow="lifted"
+                  userSelect="none"
+                >
+                  <VStack spacing={0}>
+                    <Heading size="3xl" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {day.dhikr[focused.id] ?? 0}
+                    </Heading>
+                    {focused.target > 0 && (
+                      <Text fontSize="sm" opacity={0.85}>
+                        of {focused.target}
+                      </Text>
+                    )}
+                  </VStack>
+                </Circle>
+
+                {focused.target > 0 && (
+                  <Box w="100%" maxW="320px">
+                    <Progress
+                      value={Math.min(100, ((day.dhikr[focused.id] ?? 0) / focused.target) * 100)}
+                      size="sm"
+                      aria-label={`${focused.name} progress`}
+                    />
+                  </Box>
+                )}
+
+                <HStack spacing={2}>
+                  <Button
+                    leftIcon={<Icon as={FiMinus} />}
+                    variant="outline"
+                    onClick={() => increment(focused.id, -1)}
+                    isDisabled={(day.dhikr[focused.id] ?? 0) === 0}
+                  >
+                    Undo
+                  </Button>
+                  <Button
+                    leftIcon={<Icon as={FiRotateCcw} />}
+                    variant="ghost"
+                    onClick={() => actions.setDhikr(dateKey, focused.id, 0)}
+                  >
                     Reset
                   </Button>
                 </HStack>
-              </HStack>
-            ))}
-          </VStack>
-        </CardBody>
-      </Card>
-      
-      <Card bg={cardBg} borderWidth="1px" borderColor={borderColor} borderRadius="lg" mb={6}>
-        <CardHeader pb={2}>
-          <Heading size="md">Add New Dhikr</Heading>
-        </CardHeader>
-        <CardBody>
-          <FormControl>
-            <FormLabel>Dhikr Name</FormLabel>
-            <HStack>
-              <Input 
-                value={newDhikrName} 
-                onChange={(e) => setNewDhikrName(e.target.value)}
-                placeholder="Enter dhikr name"
-              />
-              <Button colorScheme="green" onClick={handleAddNewDhikr}>
-                Add
+
+                <Text fontSize="xs" color="text.muted" textAlign="center">
+                  Tap the circle, or press Space when it is focused.
+                </Text>
+              </VStack>
+            </SectionCard>
+          ) : (
+            <SectionCard
+              title="Counters"
+              subtitle="Tap a card to open the full-size counter"
+              icon={FaRegStar}
+              action={
+                <Button size="xs" variant="ghost" leftIcon={<Icon as={FiPlus} />} onClick={() => openEditor()}>
+                  Add
+                </Button>
+              }
+            >
+              <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={3}>
+                {presets.map((preset) => {
+                  const count = day.dhikr[preset.id] ?? 0;
+                  const percent = preset.target ? Math.min(100, (count / preset.target) * 100) : 0;
+                  const reached = preset.target > 0 && count >= preset.target;
+
+                  return (
+                    <Box
+                      key={preset.id}
+                      borderWidth="1px"
+                      borderColor={reached ? `${preset.colorScheme}.300` : 'border.default'}
+                      borderRadius="xl"
+                      p={4}
+                      transition="border-color 0.15s ease"
+                      _hover={{ borderColor: `${preset.colorScheme}.400` }}
+                    >
+                      <Flex
+                        as="button"
+                        type="button"
+                        onClick={() => setFocusId(preset.id)}
+                        w="100%"
+                        textAlign="left"
+                        align="flex-start"
+                        justify="space-between"
+                        gap={2}
+                        mb={2}
+                        aria-label={`Open ${preset.name} counter`}
+                      >
+                        <Box minW={0}>
+                          <Text fontWeight="700" noOfLines={1}>
+                            {preset.name}
+                          </Text>
+                          {preset.transliteration && (
+                            <Text fontSize="xs" color="text.muted" noOfLines={1}>
+                              {preset.transliteration}
+                            </Text>
+                          )}
+                        </Box>
+                        {reached && (
+                          <Badge colorScheme={preset.colorScheme} flexShrink={0}>
+                            Done
+                          </Badge>
+                        )}
+                      </Flex>
+
+                      <HStack justify="space-between" align="baseline" mb={2}>
+                        <Heading size="lg" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {count}
+                        </Heading>
+                        {preset.target > 0 && (
+                          <Text fontSize="sm" color="text.muted">
+                            / {preset.target}
+                          </Text>
+                        )}
+                      </HStack>
+
+                      {preset.target > 0 && (
+                        <Progress
+                          value={percent}
+                          size="xs"
+                          colorScheme={preset.colorScheme}
+                          mb={3}
+                          aria-label={`${preset.name} progress`}
+                        />
+                      )}
+
+                      <HStack spacing={1}>
+                        <IconButton
+                          aria-label={`Decrease ${preset.name}`}
+                          icon={<Icon as={FiMinus} />}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => increment(preset.id, -1)}
+                          isDisabled={count === 0}
+                        />
+                        <Button
+                          flex="1"
+                          size="sm"
+                          colorScheme={preset.colorScheme}
+                          leftIcon={<Icon as={FiPlus} />}
+                          onClick={() => increment(preset.id)}
+                          aria-label={`Count ${preset.name}`}
+                        >
+                          Count
+                        </Button>
+                        <IconButton
+                          aria-label={`Edit ${preset.name}`}
+                          icon={<Icon as={FiSettings} />}
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => openEditor(preset)}
+                        />
+                      </HStack>
+                    </Box>
+                  );
+                })}
+              </SimpleGrid>
+            </SectionCard>
+          )}
+        </Box>
+
+        <VStack spacing={{ base: 4, md: 5 }} align="stretch">
+          <SectionCard title="Today" icon={FaRegStar}>
+            <Stat mb={3}>
+              <StatLabel color="text.muted">Total recitations</StatLabel>
+              <StatNumber fontSize="3xl">{total.toLocaleString()}</StatNumber>
+            </Stat>
+            {goal > 0 && (
+              <>
+                <Progress
+                  value={Math.min(100, (total / goal) * 100)}
+                  size="sm"
+                  mb={2}
+                  aria-label="Daily dhikr goal"
+                />
+                <Text fontSize="sm" color="text.muted">
+                  {total >= goal ? 'Daily goal reached.' : `${goal - total} to reach today's goal.`}
+                </Text>
+              </>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              colorScheme="red"
+              mt={4}
+              w="100%"
+              leftIcon={<Icon as={FiRotateCcw} />}
+              onClick={() => {
+                actions.resetDhikrForDay(dateKey);
+                toast({ title: 'Counters reset', status: 'info', duration: 1800, position: 'bottom' });
+              }}
+              isDisabled={total === 0}
+            >
+              Reset this day
+            </Button>
+          </SectionCard>
+
+          <SectionCard
+            title="Tasbih of az-Zahra (a)"
+            subtitle="34 · 33 · 33, recited after each prayer"
+            icon={FaRegStar}
+          >
+            <VStack spacing={3} align="stretch">
+              {tasbihSequence.map(({ preset, count }) => {
+                if (!preset) return null;
+                const done = count >= preset.target;
+                return (
+                  <Box key={preset.id}>
+                    <Flex justify="space-between" mb={1}>
+                      <Text fontSize="sm" fontWeight={done ? '700' : '500'}>
+                        {preset.name}
+                      </Text>
+                      <Text fontSize="sm" color="text.muted" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {count}/{preset.target}
+                      </Text>
+                    </Flex>
+                    <Progress
+                      value={Math.min(100, (count / preset.target) * 100)}
+                      size="xs"
+                      colorScheme={done ? 'brand' : preset.colorScheme}
+                      aria-label={`${preset.name} towards ${preset.target}`}
+                    />
+                  </Box>
+                );
+              })}
+              {tasbihComplete && (
+                <Badge colorScheme="brand" alignSelf="flex-start">
+                  Complete for today
+                </Badge>
+              )}
+            </VStack>
+          </SectionCard>
+
+          <SectionCard title="This week" icon={FaRegStar}>
+            <SimpleGrid columns={2} spacing={4}>
+              <Stat>
+                <StatLabel color="text.muted">Total</StatLabel>
+                <StatNumber>{weekly.dhikrCount.toLocaleString()}</StatNumber>
+              </Stat>
+              <Stat>
+                <StatLabel color="text.muted">Daily average</StatLabel>
+                <StatNumber>{Math.round(weekly.dhikrCount / 7)}</StatNumber>
+              </Stat>
+            </SimpleGrid>
+          </SectionCard>
+        </VStack>
+      </SimpleGrid>
+
+      <Modal isOpen={editor.isOpen} onClose={editor.onClose} isCentered>
+        <ModalOverlay />
+        <ModalContent bg="surface.overlay">
+          <ModalHeader>{draft?.builtIn ? 'Edit dhikr' : 'Custom dhikr'}</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {draft && (
+              <VStack spacing={3} align="stretch">
+                <FormControl isRequired>
+                  <FormLabel fontSize="sm">Name</FormLabel>
+                  <Input
+                    value={draft.name}
+                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                    placeholder="e.g. Salawat"
+                    autoFocus
+                  />
+                </FormControl>
+                <FormControl>
+                  <FormLabel fontSize="sm">Arabic</FormLabel>
+                  <Input
+                    value={draft.arabic}
+                    onChange={(event) => setDraft({ ...draft, arabic: event.target.value })}
+                    dir="rtl"
+                    fontFamily="arabic"
+                    fontSize="lg"
+                  />
+                </FormControl>
+                <FormControl>
+                  <FormLabel fontSize="sm">Translation</FormLabel>
+                  <Input
+                    value={draft.translation}
+                    onChange={(event) => setDraft({ ...draft, translation: event.target.value })}
+                  />
+                </FormControl>
+                <FormControl>
+                  <FormLabel fontSize="sm">Daily target</FormLabel>
+                  <NumberInput
+                    min={0}
+                    max={10000}
+                    value={draft.target}
+                    onChange={(_, value) =>
+                      setDraft({ ...draft, target: Number.isNaN(value) ? 0 : value })
+                    }
+                  >
+                    <NumberInputField />
+                    <NumberInputStepper>
+                      <NumberIncrementStepper />
+                      <NumberDecrementStepper />
+                    </NumberInputStepper>
+                  </NumberInput>
+                </FormControl>
+              </VStack>
+            )}
+          </ModalBody>
+          <ModalFooter gap={2}>
+            {draft && (
+              <Button
+                variant="ghost"
+                colorScheme="red"
+                leftIcon={<Icon as={FiTrash2} />}
+                mr="auto"
+                onClick={() => {
+                  actions.removeDhikrPreset(draft.id);
+                  if (focusId === draft.id) setFocusId(null);
+                  editor.onClose();
+                }}
+              >
+                {draft.builtIn ? 'Hide' : 'Delete'}
               </Button>
-            </HStack>
-          </FormControl>
-        </CardBody>
-      </Card>
-      
-      <Button colorScheme="red" variant="outline" onClick={handleResetAll}>
-        Reset All Counters
-      </Button>
+            )}
+            <Button variant="ghost" onClick={editor.onClose}>
+              Cancel
+            </Button>
+            <Button onClick={saveDraft} isDisabled={!draft?.name.trim()}>
+              Save
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 };
 
-export default DhikrTracker; 
+export default DhikrTracker;

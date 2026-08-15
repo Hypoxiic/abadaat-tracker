@@ -1,594 +1,486 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  Badge,
   Box,
-  Container,
-  Heading,
-  Text,
-  Card,
-  CardHeader,
-  CardBody,
   Button,
-  HStack,
-  VStack,
+  Flex,
   FormControl,
   FormLabel,
+  HStack,
+  Icon,
+  IconButton,
   Input,
-  Textarea,
+  InputGroup,
+  InputLeftElement,
+  Link,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
   Select,
+  SimpleGrid,
   Stat,
   StatLabel,
   StatNumber,
-  StatHelpText,
+  Text,
+  Textarea,
+  VStack,
+  useDisclosure,
   useToast,
-  Flex,
-  Spacer,
-  Badge,
-  SimpleGrid,
-  Divider,
-  Checkbox,
-  IconButton,
-  Tag,
-  TagLabel,
-  TagCloseButton,
-  Link,
-  InputGroup,
-  InputLeftAddon,
-  Tooltip,
-  useColorModeValue
 } from '@chakra-ui/react';
-import { format } from 'date-fns';
-import { ExternalLinkIcon } from '@chakra-ui/icons';
+import {
+  FiCheck,
+  FiExternalLink,
+  FiHeart,
+  FiPlus,
+  FiSearch,
+  FiSettings,
+  FiTrash2,
+} from 'react-icons/fi';
+import { LuHeartHandshake } from 'react-icons/lu';
+import PageHeader from '../components/ui/PageHeader';
+import { EmptyState, SectionCard } from '../components/ui/Cards';
+import DateNavigator from '../components/DateNavigator';
+import { useActions, useAppState } from '../hooks/appState';
+import { todayKey } from '../lib/dates';
+import { getDay, totalDuas, totalsForRange } from '../lib/stats';
+import { newId } from '../lib/store';
+import { DUA_CATEGORIES, DUA_RESOURCES } from '../data/duas';
+import type { DuaItem } from '../lib/types';
 
-interface DuaEntry {
-  id: string;
-  date: string;
-  name: string;
-  arabicText: string;
-  translation: string;
-  category: string;
-  favourite: boolean;
-  completed: boolean;
-  notes: string;
-  link: string;
-}
-
-// Predefined dua categories
-const duaCategories = [
-  'Morning/Evening',
-  'Before/After Meals',
-  'Before Sleep',
-  'Protection',
-  'Forgiveness',
-  'Guidance',
-  'Family',
-  'Health',
-  'Success',
-  'Other'
-];
-
-// Sample duas
-const sampleDuas = [
-  {
-    id: 'morning1',
-    name: 'Morning Remembrance',
-    arabicText: 'أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لاَ إِلَٰهَ إِلاَّ اللهُ وَحْدَهُ لاَ شَرِيكَ لَهُ',
-    translation: 'We have reached the morning and at this very time all sovereignty belongs to Allah. All praise is for Allah. None has the right to be worshipped except Allah, alone, without any partner.',
-    category: 'Morning/Evening',
-    link: 'https://duas.org/morningevening.htm',
-    favourite: false
-  },
-  {
-    id: 'protection1',
-    name: 'Protection from Evil',
-    arabicText: 'أَعُوذُ بِكَلِمَاتِ اللهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ',
-    translation: 'I seek refuge in the perfect words of Allah from the evil of what He has created.',
-    category: 'Protection',
-    link: 'https://duas.org/protection.htm',
-    favourite: false
-  },
-  {
-    id: 'forgiveness1',
-    name: 'Seeking Forgiveness',
-    arabicText: 'رَبِّ اغْفِرْ لِي وَتُبْ عَلَيَّ إِنَّكَ أَنْتَ التَّوَّابُ الرَّحِيمُ',
-    translation: 'My Lord, forgive me and accept my repentance. Indeed, You are the Accepting of repentance, the Merciful.',
-    category: 'Forgiveness',
-    link: 'https://duas.org/forgiveness.htm',
-    favourite: false
+/** Only http(s) links are rendered, so stored data cannot inject a javascript: URL. */
+const safeHref = (link: string): string | null => {
+  try {
+    const url = new URL(link);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
   }
-];
-
-// Popular Du'a websites
-const duaWebsites = [
-  { name: 'Duas.org', url: 'https://duas.org/' },
-  { name: 'Al-Islam.org', url: 'https://www.al-islam.org/tags/dua-supplication' }
-];
+};
 
 const DuaTracker: React.FC = () => {
+  const state = useAppState();
+  const actions = useActions();
   const toast = useToast();
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [entries, setEntries] = useState<DuaEntry[]>([]);
-  const [stats, setStats] = useState({
-    totalDuas: 0,
-    completedToday: 0,
-    favourites: 0
-  });
+  const editor = useDisclosure();
+  const [dateKey, setDateKey] = useState<string>(todayKey());
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('all');
+  const [favouritesOnly, setFavouritesOnly] = useState(false);
+  const [draft, setDraft] = useState<DuaItem | null>(null);
 
-  // Form state
-  const [duaName, setDuaName] = useState('');
-  const [arabicText, setArabicText] = useState('');
-  const [translation, setTranslation] = useState('');
-  const [category, setCategory] = useState(duaCategories[0]);
-  const [notes, setNotes] = useState('');
-  const [isFavourite, setIsFavourite] = useState(false);
-  const [duaLink, setDuaLink] = useState('');
-  const [showSampleDuas, setShowSampleDuas] = useState(false);
+  const day = getDay(state, dateKey);
+  const logged = useMemo(
+    () => new Map(day.duas.map((entry) => [entry.duaId, entry.count])),
+    [day.duas],
+  );
+  const weekly = useMemo(() => totalsForRange(state, 7), [state]);
 
-  // Color mode values
-  const cardBg = useColorModeValue('white', 'gray.700');
-  const textColor = useColorModeValue('gray.700', 'gray.200');
-  const headingColor = useColorModeValue('gray.800', 'white');
-  const statBg = useColorModeValue('white', 'gray.700');
-  const mutedTextColor = useColorModeValue('gray.500', 'gray.400');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
-
-  // Load data from localStorage on component mount
-  useEffect(() => {
-    const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    const storedEntries = localStorage.getItem(`dua_entries_${dateStr}`);
-    if (storedEntries) {
-      setEntries(JSON.parse(storedEntries));
-    } else {
-      setEntries([]);
-    }
-    
-    // Load stats
-    const storedStats = localStorage.getItem('dua_stats');
-    if (storedStats) {
-      setStats(JSON.parse(storedStats));
-    }
-  }, [selectedDate]);
-
-  // Save data to localStorage whenever entries change
-  useEffect(() => {
-    const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    localStorage.setItem(`dua_entries_${dateStr}`, JSON.stringify(entries));
-    
-    // Update stats
-    const completedCount = entries.filter(entry => entry.completed).length;
-    const favouritesCount = entries.filter(entry => entry.favourite).length;
-    
-    const newStats = {
-      ...stats,
-      completedToday: completedCount,
-      favourites: favouritesCount
-    };
-    
-    setStats(newStats);
-    localStorage.setItem('dua_stats', JSON.stringify(newStats));
-  }, [entries, selectedDate]);
-
-  const handleAddDua = () => {
-    if (!duaName) {
-      toast({
-        title: "Please enter a du'a name",
-        status: "error",
-        duration: 2000,
-        isClosable: true,
+  const library = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return state.duas
+      .filter((dua) => !dua.hidden)
+      .filter((dua) => (category === 'all' ? true : dua.category === category))
+      .filter((dua) => (favouritesOnly ? dua.favourite : true))
+      .filter((dua) =>
+        needle
+          ? `${dua.name} ${dua.translation} ${dua.category} ${dua.notes}`
+              .toLowerCase()
+              .includes(needle)
+          : true,
+      )
+      .sort((a, b) => {
+        if (a.favourite !== b.favourite) return a.favourite ? -1 : 1;
+        return a.name.localeCompare(b.name);
       });
-      return;
-    }
-    
-    const newEntry: DuaEntry = {
-      id: Date.now().toString(),
-      date: format(selectedDate, 'yyyy-MM-dd'),
-      name: duaName,
-      arabicText,
-      translation,
-      category,
-      favourite: isFavourite,
-      completed: false,
-      notes,
-      link: duaLink
-    };
-    
-    setEntries([...entries, newEntry]);
-    
-    // Reset form
-    setDuaName('');
-    setArabicText('');
-    setTranslation('');
-    setCategory(duaCategories[0]);
-    setNotes('');
-    setIsFavourite(false);
-    setDuaLink('');
-    
-    toast({
-      title: "Du'a added",
-      status: "success",
-      duration: 2000,
-      isClosable: true,
-    });
+  }, [state.duas, query, category, favouritesOnly]);
+
+  const openEditor = (dua?: DuaItem) => {
+    setDraft(
+      dua ?? {
+        id: newId('dua'),
+        name: '',
+        arabic: '',
+        translation: '',
+        category: DUA_CATEGORIES[0],
+        link: '',
+        notes: '',
+        favourite: false,
+        builtIn: false,
+        hidden: false,
+      },
+    );
+    editor.onOpen();
   };
 
-  const handleDateChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const daysAgo = parseInt(event.target.value);
-    const newDate = new Date();
-    newDate.setDate(newDate.getDate() - daysAgo);
-    setSelectedDate(newDate);
-  };
-
-  const handleDeleteEntry = (id: string) => {
-    setEntries(entries.filter(entry => entry.id !== id));
-    
-    toast({
-      title: "Du'a removed",
-      status: "info",
-      duration: 2000,
-      isClosable: true,
-    });
-  };
-
-  const handleToggleComplete = (id: string) => {
-    setEntries(entries.map(entry => 
-      entry.id === id ? { ...entry, completed: !entry.completed } : entry
-    ));
-  };
-
-  const handleToggleFavourite = (id: string) => {
-    setEntries(entries.map(entry => 
-      entry.id === id ? { ...entry, favourite: !entry.favourite } : entry
-    ));
-  };
-
-  const handleAddSampleDua = (sample: typeof sampleDuas[0]) => {
-    const newEntry: DuaEntry = {
-      id: Date.now().toString(),
-      date: format(selectedDate, 'yyyy-MM-dd'),
-      name: sample.name,
-      arabicText: sample.arabicText,
-      translation: sample.translation,
-      category: sample.category,
-      favourite: false,
-      completed: false,
-      notes: '',
-      link: sample.link
-    };
-    
-    setEntries([...entries, newEntry]);
-    
-    toast({
-      title: "Sample du'a added",
-      status: "success",
-      duration: 2000,
-      isClosable: true,
-    });
+  const saveDraft = () => {
+    if (!draft || !draft.name.trim()) return;
+    actions.upsertDua({ ...draft, name: draft.name.trim() });
+    editor.onClose();
+    toast({ title: "Du'a saved", status: 'success', duration: 1800, position: 'bottom' });
   };
 
   return (
-    <Container maxW="container.xl" py={8}>
-      <Box textAlign="center" mb={8}>
-        <Heading as="h1" size="xl" mb={2} color={headingColor}>Du'a Tracker</Heading>
-        <Text fontSize="lg" color={textColor}>Track your daily supplications to Allah</Text>
-      </Box>
+    <Box>
+      <PageHeader
+        eyebrow="Supplication"
+        title="Du'a tracker"
+        description="Keep a library of the du'as and ziyarat you recite, and record them each day."
+        actions={<DateNavigator value={dateKey} onChange={setDateKey} />}
+      />
 
-      <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={8}>
-        <VStack spacing={6} align="stretch">
-          <Card>
-            <CardHeader bg="orange.500" color="white">
-              <Heading size="md">Add New Du'a</Heading>
-            </CardHeader>
-            <CardBody bg={cardBg}>
-              <VStack spacing={4}>
+      <SimpleGrid columns={{ base: 1, lg: 3 }} spacing={{ base: 4, md: 5 }}>
+        <Box gridColumn={{ lg: 'span 2' }}>
+          <SectionCard
+            title="Library"
+            subtitle={`${library.length} du'a${library.length === 1 ? '' : 's'}`}
+            icon={LuHeartHandshake}
+            action={
+              <Button size="xs" variant="ghost" leftIcon={<Icon as={FiPlus} />} onClick={() => openEditor()}>
+                Add
+              </Button>
+            }
+          >
+            <Flex gap={2} mb={4} wrap="wrap">
+              <InputGroup size="sm" flex="1" minW="180px">
+                <InputLeftElement pointerEvents="none">
+                  <Icon as={FiSearch} color="text.muted" />
+                </InputLeftElement>
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search du'as"
+                  borderRadius="lg"
+                  aria-label="Search du'as"
+                />
+              </InputGroup>
+              <Select
+                size="sm"
+                w="auto"
+                borderRadius="lg"
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+                aria-label="Filter by category"
+              >
+                <option value="all">All categories</option>
+                {DUA_CATEGORIES.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                size="sm"
+                variant={favouritesOnly ? 'solid' : 'outline'}
+                colorScheme="plum"
+                leftIcon={<Icon as={FiHeart} />}
+                onClick={() => setFavouritesOnly((value) => !value)}
+                aria-pressed={favouritesOnly}
+              >
+                Favourites
+              </Button>
+            </Flex>
+
+            {library.length === 0 ? (
+              <EmptyState
+                icon={FiSearch}
+                title="Nothing matches"
+                description="Try a different search, or add a du'a of your own."
+                action={
+                  <Button size="sm" onClick={() => openEditor()}>
+                    Add a du'a
+                  </Button>
+                }
+              />
+            ) : (
+              <VStack spacing={3} align="stretch">
+                {library.map((dua) => {
+                  const count = logged.get(dua.id) ?? 0;
+                  const href = safeHref(dua.link);
+
+                  return (
+                    <Box
+                      key={dua.id}
+                      borderWidth="1px"
+                      borderColor={count > 0 ? 'brand.200' : 'border.default'}
+                      _dark={{ borderColor: count > 0 ? 'brand.600' : 'border.default' }}
+                      borderRadius="xl"
+                      p={4}
+                    >
+                      <Flex justify="space-between" gap={3} align="flex-start" mb={2}>
+                        <Box minW={0}>
+                          <HStack spacing={2} wrap="wrap">
+                            <Text fontWeight="700">{dua.name}</Text>
+                            <Badge colorScheme="plum" variant="subtle">
+                              {dua.category}
+                            </Badge>
+                            {count > 0 && (
+                              <Badge colorScheme="brand">
+                                {count}× today
+                              </Badge>
+                            )}
+                          </HStack>
+                        </Box>
+                        <HStack spacing={0.5} flexShrink={0}>
+                          <IconButton
+                            aria-label={
+                              dua.favourite
+                                ? `Remove ${dua.name} from favourites`
+                                : `Add ${dua.name} to favourites`
+                            }
+                            icon={<Icon as={FiHeart} fill={dua.favourite ? 'currentColor' : 'none'} />}
+                            size="sm"
+                            variant="ghost"
+                            colorScheme={dua.favourite ? 'red' : 'gray'}
+                            onClick={() => actions.toggleDuaFavourite(dua.id)}
+                          />
+                          {href && (
+                            <IconButton
+                              as={Link}
+                              href={href}
+                              isExternal
+                              aria-label={`Open ${dua.name} in a new tab`}
+                              icon={<Icon as={FiExternalLink} />}
+                              size="sm"
+                              variant="ghost"
+                            />
+                          )}
+                          <IconButton
+                            aria-label={`Edit ${dua.name}`}
+                            icon={<Icon as={FiSettings} />}
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openEditor(dua)}
+                          />
+                        </HStack>
+                      </Flex>
+
+                      {dua.arabic && (
+                        <Text className="arabic" fontSize="lg" mb={2} noOfLines={2}>
+                          {dua.arabic}
+                        </Text>
+                      )}
+                      {dua.translation && (
+                        <Text fontSize="sm" color="text.secondary" mb={2} noOfLines={3}>
+                          {dua.translation}
+                        </Text>
+                      )}
+                      {dua.notes && (
+                        <Text fontSize="xs" color="text.muted" mb={2}>
+                          {dua.notes}
+                        </Text>
+                      )}
+
+                      <HStack spacing={2} mt={3}>
+                        <Button
+                          size="sm"
+                          colorScheme={count > 0 ? 'brand' : 'gray'}
+                          variant={count > 0 ? 'solid' : 'outline'}
+                          leftIcon={<Icon as={count > 0 ? FiCheck : FiPlus} />}
+                          onClick={() => actions.logDua(dateKey, dua.id, 1)}
+                          aria-label={`Record a recitation of ${dua.name}`}
+                        >
+                          {count > 0 ? 'Recite again' : 'Recited'}
+                        </Button>
+                        {count > 0 && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => actions.logDua(dateKey, dua.id, -1)}
+                            aria-label={`Undo a recitation of ${dua.name}`}
+                          >
+                            Undo
+                          </Button>
+                        )}
+                      </HStack>
+                    </Box>
+                  );
+                })}
+              </VStack>
+            )}
+          </SectionCard>
+        </Box>
+
+        <VStack spacing={{ base: 4, md: 5 }} align="stretch">
+          <SectionCard title="Recorded this day" icon={LuHeartHandshake}>
+            <Stat mb={4}>
+              <StatLabel color="text.muted">Total recitations</StatLabel>
+              <StatNumber fontSize="3xl">{totalDuas(day)}</StatNumber>
+            </Stat>
+
+            {day.duas.length === 0 ? (
+              <Text fontSize="sm" color="text.muted">
+                Nothing recorded yet for this day.
+              </Text>
+            ) : (
+              <VStack spacing={2} align="stretch">
+                {day.duas.map((entry) => {
+                  const dua = state.duas.find((item) => item.id === entry.duaId);
+                  return (
+                    <Flex key={entry.duaId} justify="space-between" align="center" gap={2}>
+                      <Text fontSize="sm" noOfLines={1}>
+                        {dua?.name ?? 'Removed du\'a'}
+                      </Text>
+                      <HStack spacing={1} flexShrink={0}>
+                        <Badge>{entry.count}×</Badge>
+                        <IconButton
+                          aria-label={`Remove ${dua?.name ?? "du'a"} from this day`}
+                          icon={<Icon as={FiTrash2} />}
+                          size="xs"
+                          variant="ghost"
+                          colorScheme="red"
+                          onClick={() => actions.unlogDua(dateKey, entry.duaId)}
+                        />
+                      </HStack>
+                    </Flex>
+                  );
+                })}
+              </VStack>
+            )}
+          </SectionCard>
+
+          <SectionCard title="This week" icon={LuHeartHandshake}>
+            <SimpleGrid columns={2} spacing={4}>
+              <Stat>
+                <StatLabel color="text.muted">Recitations</StatLabel>
+                <StatNumber>{weekly.duaCount}</StatNumber>
+              </Stat>
+              <Stat>
+                <StatLabel color="text.muted">Favourites</StatLabel>
+                <StatNumber>{state.duas.filter((dua) => dua.favourite && !dua.hidden).length}</StatNumber>
+              </Stat>
+            </SimpleGrid>
+          </SectionCard>
+
+          <SectionCard title="Resources" icon={FiExternalLink}>
+            <VStack spacing={3} align="stretch">
+              {DUA_RESOURCES.map((resource) => (
+                <Link
+                  key={resource.url}
+                  href={resource.url}
+                  isExternal
+                  p={3}
+                  borderRadius="lg"
+                  borderWidth="1px"
+                  borderColor="border.default"
+                  _hover={{ borderColor: 'accent.solid', textDecoration: 'none' }}
+                >
+                  <HStack justify="space-between">
+                    <Box>
+                      <Text fontWeight="600" fontSize="sm">
+                        {resource.name}
+                      </Text>
+                      <Text fontSize="xs" color="text.muted">
+                        {resource.description}
+                      </Text>
+                    </Box>
+                    <Icon as={FiExternalLink} color="text.muted" flexShrink={0} />
+                  </HStack>
+                </Link>
+              ))}
+            </VStack>
+          </SectionCard>
+        </VStack>
+      </SimpleGrid>
+
+      <Modal isOpen={editor.isOpen} onClose={editor.onClose} size="lg" isCentered scrollBehavior="inside">
+        <ModalOverlay />
+        <ModalContent bg="surface.overlay">
+          <ModalHeader>{draft?.builtIn ? "Edit du'a" : "Custom du'a"}</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {draft && (
+              <VStack spacing={3} align="stretch">
                 <FormControl isRequired>
-                  <FormLabel color={textColor}>Du'a Name</FormLabel>
-                  <Input 
-                    value={duaName}
-                    onChange={(e) => setDuaName(e.target.value)}
-                    placeholder="Enter the name of the du'a"
+                  <FormLabel fontSize="sm">Name</FormLabel>
+                  <Input
+                    value={draft.name}
+                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                    placeholder="e.g. Du'a al-Faraj"
+                    autoFocus
                   />
                 </FormControl>
-                
                 <FormControl>
-                  <FormLabel color={textColor}>Arabic Text</FormLabel>
-                  <Textarea 
-                    value={arabicText}
-                    onChange={(e) => setArabicText(e.target.value)}
-                    placeholder="Enter the Arabic text (optional)"
-                    dir="rtl"
-                  />
-                </FormControl>
-                
-                <FormControl>
-                  <FormLabel color={textColor}>Translation</FormLabel>
-                  <Textarea 
-                    value={translation}
-                    onChange={(e) => setTranslation(e.target.value)}
-                    placeholder="Enter the translation (optional)"
-                  />
-                </FormControl>
-                
-                <FormControl>
-                  <FormLabel color={textColor}>Category</FormLabel>
-                  <Select 
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
+                  <FormLabel fontSize="sm">Category</FormLabel>
+                  <Select
+                    value={draft.category}
+                    onChange={(event) => setDraft({ ...draft, category: event.target.value })}
                   >
-                    {duaCategories.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
+                    {DUA_CATEGORIES.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
                     ))}
                   </Select>
                 </FormControl>
-                
                 <FormControl>
-                  <FormLabel color={textColor}>Link to Du'a Resource</FormLabel>
-                  <InputGroup>
-                    <InputLeftAddon>
-                      <ExternalLinkIcon />
-                    </InputLeftAddon>
-                    <Input 
-                      value={duaLink}
-                      onChange={(e) => setDuaLink(e.target.value)}
-                      placeholder="https://duas.org/..."
-                    />
-                  </InputGroup>
-                  <Text fontSize="xs" color={mutedTextColor} mt={1}>
-                    Add a link to Duas.org or another resource for this du'a
-                  </Text>
-                </FormControl>
-                
-                <FormControl>
-                  <FormLabel color={textColor}>Notes</FormLabel>
-                  <Textarea 
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Add any personal notes (optional)"
+                  <FormLabel fontSize="sm">Arabic</FormLabel>
+                  <Textarea
+                    value={draft.arabic}
+                    onChange={(event) => setDraft({ ...draft, arabic: event.target.value })}
+                    dir="rtl"
+                    fontFamily="arabic"
+                    fontSize="lg"
+                    rows={2}
                   />
                 </FormControl>
-                
-                <FormControl display="flex" alignItems="center">
-                  <Checkbox 
-                    isChecked={isFavourite}
-                    onChange={(e) => setIsFavourite(e.target.checked)}
-                    colorScheme="orange"
-                    mr={2}
+                <FormControl>
+                  <FormLabel fontSize="sm">Translation</FormLabel>
+                  <Textarea
+                    value={draft.translation}
+                    onChange={(event) => setDraft({ ...draft, translation: event.target.value })}
+                    rows={3}
                   />
-                  <FormLabel mb={0} color={textColor}>Mark as favourite</FormLabel>
                 </FormControl>
-                
-                <Button 
-                  colorScheme="orange" 
-                  width="full"
-                  onClick={handleAddDua}
-                >
-                  Add Du'a
-                </Button>
+                <FormControl isInvalid={!!draft.link && !safeHref(draft.link)}>
+                  <FormLabel fontSize="sm">Link</FormLabel>
+                  <Input
+                    value={draft.link}
+                    onChange={(event) => setDraft({ ...draft, link: event.target.value })}
+                    placeholder="https://www.duas.org/…"
+                    type="url"
+                  />
+                </FormControl>
+                <FormControl>
+                  <FormLabel fontSize="sm">Notes</FormLabel>
+                  <Input
+                    value={draft.notes}
+                    onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+                    placeholder="When you recite it, why it matters to you…"
+                  />
+                </FormControl>
               </VStack>
-            </CardBody>
-          </Card>
-          
-          <Card>
-            <CardHeader bg="purple.500" color="white">
-              <Heading size="md">Du'a Resources</Heading>
-            </CardHeader>
-            <CardBody bg={cardBg}>
-              <VStack spacing={4} align="stretch">
-                <Text color={textColor}>Popular websites for finding du'as:</Text>
-                
-                <SimpleGrid columns={2} spacing={4}>
-                  {duaWebsites.map((site) => (
-                    <Link 
-                      key={site.name} 
-                      href={site.url} 
-                      isExternal 
-                      color="brand.600"
-                      p={2}
-                      borderRadius="md"
-                      _hover={{ bg: "brand.50", textDecoration: "none" }}
-                    >
-                      <HStack>
-                        <ExternalLinkIcon mr={2} />
-                        <Text color={textColor}>{site.name}</Text>
-                      </HStack>
-                    </Link>
-                  ))}
-                </SimpleGrid>
-                
-                <Divider />
-                
-                <Box>
-                  <Button
-                    colorScheme="purple"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowSampleDuas(!showSampleDuas)}
-                    mb={2}
-                  >
-                    {showSampleDuas ? "Hide Sample Du'as" : "Show Sample Du'as"}
-                  </Button>
-                  
-                  {showSampleDuas && (
-                    <VStack spacing={3} align="stretch">
-                      {sampleDuas.map((dua) => (
-                        <Card key={dua.id} size="sm" variant="outline">
-                          <CardBody p={3} bg={cardBg}>
-                            <VStack align="start" spacing={1}>
-                              <Flex width="full" justify="space-between" align="center">
-                                <Heading size="xs" color={headingColor}>{dua.name}</Heading>
-                                <HStack>
-                                  {dua.link && (
-                                    <Tooltip label="View on Duas.org">
-                                      <Link href={dua.link} isExternal>
-                                        <ExternalLinkIcon color="blue.500" />
-                                      </Link>
-                                    </Tooltip>
-                                  )}
-                                  <Button 
-                                    size="xs" 
-                                    colorScheme="purple" 
-                                    onClick={() => handleAddSampleDua(dua)}
-                                  >
-                                    Add
-                                  </Button>
-                                </HStack>
-                              </Flex>
-                              <Badge colorScheme="purple">{dua.category}</Badge>
-                            </VStack>
-                          </CardBody>
-                        </Card>
-                      ))}
-                    </VStack>
-                  )}
-                </Box>
-              </VStack>
-            </CardBody>
-          </Card>
-        </VStack>
-        
-        <VStack spacing={6} align="stretch">
-          <Card>
-            <CardHeader bg="orange.500" color="white">
-              <Flex align="center" justify="space-between">
-                <Heading size="md">
-                  Du'as for {format(selectedDate, 'dd MMMM yyyy')}
-                </Heading>
-                <Select 
-                  width="auto" 
-                  size="sm" 
-                  bg="white" 
-                  color="black"
-                  onChange={handleDateChange}
-                  defaultValue="0"
-                >
-                  <option value="0">Today</option>
-                  <option value="1">Yesterday</option>
-                  <option value="2">2 days ago</option>
-                  <option value="3">3 days ago</option>
-                  <option value="7">1 week ago</option>
-                </Select>
-              </Flex>
-            </CardHeader>
-            <CardBody bg={cardBg}>
-              {entries.length === 0 ? (
-                <Text textAlign="center" color={mutedTextColor}>
-                  No du'as recorded for this day. Add a new du'a to get started.
-                </Text>
-              ) : (
-                <VStack spacing={4} align="stretch">
-                  {entries.map((entry) => (
-                    <Card key={entry.id} variant="outline">
-                      <CardBody bg={cardBg}>
-                        <VStack align="start" spacing={3}>
-                          <Flex width="full" justify="space-between" align="center">
-                            <HStack>
-                              <Checkbox 
-                                isChecked={entry.completed}
-                                onChange={() => handleToggleComplete(entry.id)}
-                                colorScheme="green"
-                              />
-                              <Heading size="sm" textDecoration={entry.completed ? "line-through" : "none"} color={headingColor}>
-                                {entry.name}
-                              </Heading>
-                              {entry.favourite && (
-                                <Badge colorScheme="red">Favourite</Badge>
-                              )}
-                            </HStack>
-                            <HStack>
-                              {entry.link && (
-                                <Tooltip label="Open link">
-                                  <Link href={entry.link} isExternal>
-                                    <IconButton
-                                      aria-label="Open link"
-                                      icon={<ExternalLinkIcon />}
-                                      size="sm"
-                                      variant="ghost"
-                                      colorScheme="blue"
-                                    />
-                                  </Link>
-                                </Tooltip>
-                              )}
-                              <IconButton
-                                aria-label="Delete du'a"
-                                icon={<span>🗑️</span>}
-                                size="sm"
-                                variant="ghost"
-                                colorScheme="red"
-                                onClick={() => handleDeleteEntry(entry.id)}
-                              />
-                              <IconButton
-                                aria-label={entry.favourite ? "Remove from favourites" : "Add to favourites"}
-                                icon={<span>{entry.favourite ? "❤️" : "🤍"}</span>}
-                                size="sm"
-                                variant="ghost"
-                                colorScheme={entry.favourite ? "red" : "gray"}
-                                onClick={() => handleToggleFavourite(entry.id)}
-                              />
-                            </HStack>
-                          </Flex>
-                          
-                          <Badge colorScheme="orange">{entry.category}</Badge>
-                          
-                          {entry.arabicText && (
-                            <Box 
-                              p={2} 
-                              bg={useColorModeValue('gray.50', 'gray.800')} 
-                              width="full" 
-                              borderRadius="md"
-                              dir="rtl"
-                              fontFamily="'Noto Sans Arabic', sans-serif"
-                              fontSize="lg"
-                            >
-                              {entry.arabicText}
-                            </Box>
-                          )}
-                          
-                          {entry.translation && (
-                            <Box p={2} bg={useColorModeValue('gray.50', 'gray.800')} width="full" borderRadius="md">
-                              <Text fontStyle="italic" color={textColor}>{entry.translation}</Text>
-                            </Box>
-                          )}
-                          
-                          {entry.notes && (
-                            <Box>
-                              <Text fontWeight="bold" fontSize="sm" color={textColor}>Notes:</Text>
-                              <Text fontSize="sm" color={textColor}>{entry.notes}</Text>
-                            </Box>
-                          )}
-                        </VStack>
-                      </CardBody>
-                    </Card>
-                  ))}
-                </VStack>
-              )}
-            </CardBody>
-          </Card>
-          
-          <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
-            <Stat bg={statBg} p={4} borderRadius="lg" boxShadow="sm">
-              <StatLabel color={textColor}>Total Du'as</StatLabel>
-              <StatNumber color={headingColor}>{entries.length}</StatNumber>
-              <StatHelpText color={mutedTextColor}>For {format(selectedDate, 'dd MMM')}</StatHelpText>
-            </Stat>
-            
-            <Stat bg={statBg} p={4} borderRadius="lg" boxShadow="sm">
-              <StatLabel color={textColor}>Completed</StatLabel>
-              <StatNumber color={headingColor}>{stats.completedToday}</StatNumber>
-              <StatHelpText color={mutedTextColor}>
-                {stats.completedToday > 0 && entries.length > 0
-                  ? `${Math.round((stats.completedToday / entries.length) * 100)}%`
-                  : '0%'}
-              </StatHelpText>
-            </Stat>
-            
-            <Stat bg={statBg} p={4} borderRadius="lg" boxShadow="sm">
-              <StatLabel color={textColor}>Favourites</StatLabel>
-              <StatNumber color={headingColor}>{stats.favourites}</StatNumber>
-              <StatHelpText color={mutedTextColor}>Marked with ❤️</StatHelpText>
-            </Stat>
-          </SimpleGrid>
-        </VStack>
-      </SimpleGrid>
-    </Container>
+            )}
+          </ModalBody>
+          <ModalFooter gap={2}>
+            {draft && (
+              <Button
+                variant="ghost"
+                colorScheme="red"
+                leftIcon={<Icon as={FiTrash2} />}
+                mr="auto"
+                onClick={() => {
+                  actions.removeDua(draft.id);
+                  editor.onClose();
+                }}
+              >
+                {draft.builtIn ? 'Hide' : 'Delete'}
+              </Button>
+            )}
+            <Button variant="ghost" onClick={editor.onClose}>
+              Cancel
+            </Button>
+            <Button onClick={saveDraft} isDisabled={!draft?.name.trim()}>
+              Save
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </Box>
   );
 };
 
-export default DuaTracker; 
+export default DuaTracker;

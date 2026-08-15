@@ -1,289 +1,310 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Grid, Heading, Text, Container, Stat, StatLabel, StatNumber, StatHelpText, SimpleGrid, Card, CardHeader, CardBody, Button, useColorModeValue, Tabs, TabList, TabPanels, Tab, TabPanel, Divider } from '@chakra-ui/react';
+import React, { useMemo, useState } from 'react';
+import {
+  Box,
+  Button,
+  Flex,
+  HStack,
+  Heading,
+  Icon,
+  SimpleGrid,
+  Stack,
+  Tab,
+  TabList,
+  TabPanel,
+  TabPanels,
+  Tabs,
+  Text,
+  VStack,
+} from '@chakra-ui/react';
 import { Link as RouterLink } from 'react-router-dom';
-import { format } from 'date-fns';
-import HistoricalDataChart from '../components/HistoricalDataChart';
-import { generateMockPrayerData, generateMockQuranData, generateMockDhikrData, generateMockDuaData } from '../utils/mockData';
-import { FaPray, FaBookOpen, FaHeart, FaHandsHelping } from 'react-icons/fa';
-import { Alert, AlertDescription, AlertIcon, AlertTitle, VStack } from '@chakra-ui/react';
-import { IconType } from 'react-icons';
+import { FiAward, FiBookOpen, FiTrendingUp } from 'react-icons/fi';
+import { FaKaaba, FaRegStar } from 'react-icons/fa';
+import { LuHeartHandshake } from 'react-icons/lu';
+import PageHeader from '../components/ui/PageHeader';
+import { EmptyState, SectionCard, StatTile } from '../components/ui/Cards';
+import PrayerChecklist from '../components/PrayerChecklist';
+import PrayerTimesPanel from '../components/PrayerTimesPanel';
+import TrendChart from '../components/TrendChart';
+import { useActions, useAppState } from '../hooks/appState';
+import { usePrayerTimes } from '../hooks/usePrayerTimes';
+import { formatHijri, formatLongDate, todayKey, toHijri } from '../lib/dates';
+import {
+  buildSeries,
+  computeActivityStreak,
+  computePrayerStreak,
+  getDay,
+  prayerConsistency,
+  summariseDay,
+  totalsForRange,
+  type MetricKey,
+} from '../lib/stats';
+import type { PrayerKey, PrayerStatus } from '../lib/types';
 
-interface StatsData {
-  prayers: { completed: number; total: number };
-  quranPages: number;
-  dhikrCount: number;
-  duaCount: number;
-  streak: number;
-}
+const METRIC_TABS: Array<{
+  key: MetricKey;
+  label: string;
+  color: string;
+  type: 'bar' | 'line';
+  suggestedMax?: number;
+}> = [
+  { key: 'prayers', label: 'Prayers', color: '#219e75', type: 'bar', suggestedMax: 5 },
+  { key: 'quran', label: "Qur'an", color: '#316dbd', type: 'line' },
+  { key: 'dhikr', label: 'Dhikr', color: '#c9992a', type: 'bar' },
+  { key: 'dua', label: "Du'a", color: '#874cab', type: 'line' },
+];
 
-interface HistoricalDataType {
-  prayers: { data: number[]; labels: string[] };
-  quran: { data: number[]; labels: string[] };
-  dhikr: { data: number[]; labels: string[] };
-  dua: { data: number[]; labels: string[] };
-}
-
-// StatCard component for displaying statistics
-interface StatCardProps {
-  title: string;
-  value: string;
-  description: string;
-  icon: IconType;
-  colorScheme: string;
-  linkTo: string;
-}
-
-const StatCard: React.FC<StatCardProps> = ({ title, value, description, icon: Icon, colorScheme, linkTo }) => {
-  const bgColor = `${colorScheme}.500`;
-  
-  return (
-    <Card overflow="hidden" boxShadow="md" _hover={{ transform: 'translateY(-5px)', transition: 'transform 0.3s ease' }}>
-      <CardHeader pb={0} bg={bgColor} color="white">
-        <Heading size="md">{title}</Heading>
-      </CardHeader>
-      <CardBody>
-        <Stat>
-          <StatNumber fontSize="3xl">{value}</StatNumber>
-          <StatHelpText>{description}</StatHelpText>
-          <Button as={RouterLink} to={linkTo} size="sm" colorScheme={colorScheme} mt={2}>
-            Track {title}
-          </Button>
-        </Stat>
-      </CardBody>
-    </Card>
-  );
+const greeting = (hour: number): string => {
+  if (hour < 5) return 'Peace be with you tonight';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
 };
 
 const Dashboard: React.FC = () => {
-  const [stats, setStats] = useState<StatsData>({
-    prayers: { completed: 0, total: 5 },
-    quranPages: 0,
-    dhikrCount: 0,
-    duaCount: 0,
-    streak: 0
-  });
+  const state = useAppState();
+  const actions = useActions();
+  const { times, current, location, now } = usePrayerTimes();
+  const [range, setRange] = useState<7 | 30>(7);
 
-  const [historicalData, setHistoricalData] = useState<HistoricalDataType>({
-    prayers: { data: [], labels: [] },
-    quran: { data: [], labels: [] },
-    dhikr: { data: [], labels: [] },
-    dua: { data: [], labels: [] }
-  });
+  const dateKey = todayKey();
+  const today = getDay(state, dateKey);
+  const summary = useMemo(() => summariseDay(state, dateKey), [state, dateKey]);
+  const streak = useMemo(() => computePrayerStreak(state, dateKey), [state, dateKey]);
+  const activityStreak = useMemo(() => computeActivityStreak(state, dateKey), [state, dateKey]);
+  const consistency = useMemo(() => prayerConsistency(state, 30, dateKey), [state, dateKey]);
+  const totals = useMemo(() => totalsForRange(state, range, dateKey), [state, range, dateKey]);
+  const seriesByMetric = useMemo(
+    () =>
+      METRIC_TABS.reduce<Record<MetricKey, ReturnType<typeof buildSeries>>>(
+        (acc, tab) => ({ ...acc, [tab.key]: buildSeries(state, tab.key, range, dateKey) }),
+        {} as Record<MetricKey, ReturnType<typeof buildSeries>>,
+      ),
+    [state, range, dateKey],
+  );
 
-  const cardBg = useColorModeValue('white', 'gray.700');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
-  const headingColor = useColorModeValue('brand.700', 'brand.200');
-  const statBg = useColorModeValue('brand.50', 'gray.800');
+  const hijri = toHijri(now, state.settings.hijriOffset);
+  const goals = state.settings.goals;
 
-  useEffect(() => {
-    // Load stats from localStorage
-    const storedStats = localStorage.getItem('abadaat_stats');
-    if (storedStats) {
-      setStats(JSON.parse(storedStats));
-    }
+  const handleSetStatus = (prayer: PrayerKey, status: PrayerStatus) =>
+    actions.setPrayerStatus(dateKey, prayer, status);
 
-    // Generate some sample historical data
-    const generateHistoricalData = () => {
-      const days = 7;
-      const labels = Array.from({ length: days }, (_, i) => {
-        const date = new Date();
-        date.setDate(date.getDate() - (days - 1 - i));
-        return format(date, 'dd MMM');
-      });
-
-      // Sample prayer data (0-5 prayers per day)
-      const prayerData = Array.from({ length: days }, () => 
-        Math.floor(Math.random() * 6)
-      );
-
-      // Sample Quran pages data (0-20 pages per day)
-      const quranData = Array.from({ length: days }, () => 
-        Math.floor(Math.random() * 21)
-      );
-
-      // Sample dhikr counts (0-100 per day)
-      const dhikrData = Array.from({ length: days }, () => 
-        Math.floor(Math.random() * 101)
-      );
-
-      // Sample dua counts (0-10 per day)
-      const duaData = Array.from({ length: days }, () => 
-        Math.floor(Math.random() * 11)
-      );
-
-      return {
-        prayers: { data: prayerData, labels },
-        quran: { data: quranData, labels },
-        dhikr: { data: dhikrData, labels },
-        dua: { data: duaData, labels }
-      };
-    };
-
-    setHistoricalData(generateHistoricalData());
-  }, []);
+  const hasAnyHistory = Object.keys(state.days).length > 0;
 
   return (
-    <Container maxW="container.xl" py={8}>
-      <Box textAlign="center" mb={8}>
-        <Heading as="h1" size="xl" mb={2}>Dashboard</Heading>
-        <Text fontSize="lg" color="gray.600">
-          Track your daily acts of worship
-        </Text>
-        <Text fontSize="md" mt={2}>
-          Today is {format(new Date(), 'EEEE, dd MMMM yyyy')}
-        </Text>
-      </Box>
+    <Box>
+      <PageHeader
+        eyebrow={
+          state.settings.showHijriDate ? formatHijri(hijri) : formatLongDate(now)
+        }
+        title={greeting(now.getHours())}
+        description={`${formatLongDate(now)} · everything below is recorded on this device.`}
+        actions={
+          <Button as={RouterLink} to="/prayer" size="sm" leftIcon={<Icon as={FaKaaba} />}>
+            Log prayers
+          </Button>
+        }
+      />
 
-      <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={6} mb={8}>
-        <StatCard 
-          title="Prayers" 
-          value={`${stats.prayers.completed}/${stats.prayers.total}`} 
-          description="Daily prayers completed"
-          icon={FaPray}
+      <SimpleGrid columns={{ base: 2, lg: 4 }} spacing={{ base: 3, md: 4 }} mb={{ base: 4, md: 6 }}>
+        <StatTile
+          label="Prayers"
+          value={`${summary.prayersCompleted}/5`}
+          helpText="Recorded today"
+          icon={FaKaaba}
           colorScheme="brand"
-          linkTo="/prayer"
+          to="/prayer"
+          progress={(summary.prayersCompleted / 5) * 100}
         />
-        <StatCard 
-          title="Qur'an" 
-          value={stats.quranPages.toString()} 
-          description="Pages read today"
-          icon={FaBookOpen}
-          colorScheme="blue"
-          linkTo="/quran"
+        <StatTile
+          label="Qur'an"
+          value={summary.quranPages ? `${summary.quranPages}` : '0'}
+          helpText={goals.quranPages ? `of ${goals.quranPages} page goal` : 'pages today'}
+          icon={FiBookOpen}
+          colorScheme="lapis"
+          to="/quran"
+          progress={goals.quranPages ? (summary.quranPages / goals.quranPages) * 100 : undefined}
         />
-        <StatCard 
-          title="Dhikr" 
-          value={stats.dhikrCount.toString()} 
-          description="Remembrances today"
-          icon={FaHeart}
-          colorScheme="yellow"
-          linkTo="/dhikr"
+        <StatTile
+          label="Dhikr"
+          value={summary.dhikrCount.toLocaleString()}
+          helpText={goals.dhikrCount ? `of ${goals.dhikrCount} goal` : 'recitations today'}
+          icon={FaRegStar}
+          colorScheme="gold"
+          to="/dhikr"
+          progress={goals.dhikrCount ? (summary.dhikrCount / goals.dhikrCount) * 100 : undefined}
         />
-        <StatCard 
-          title="Du'a" 
-          value={stats.duaCount.toString()} 
-          description="Supplications tracked"
-          icon={FaHandsHelping}
-          colorScheme="orange"
-          linkTo="/dua"
+        <StatTile
+          label="Du'a"
+          value={summary.duaCount.toLocaleString()}
+          helpText={goals.duaCount ? `of ${goals.duaCount} goal` : 'recited today'}
+          icon={LuHeartHandshake}
+          colorScheme="plum"
+          to="/dua"
+          progress={goals.duaCount ? (summary.duaCount / goals.duaCount) * 100 : undefined}
         />
       </SimpleGrid>
 
-      <Card mb={8}>
-        <CardHeader bg="purple.500" color="white">
-          <Heading size="md">Your Streak</Heading>
-        </CardHeader>
-        <CardBody textAlign="center">
-          <Heading size="4xl" color="purple.500" mb={2}>{stats.streak}</Heading>
-          <Text>days of consistent worship</Text>
-          <Text fontSize="sm" color="gray.500" mt={2}>
-            Keep it up! Consistency is key to spiritual growth.
-          </Text>
-        </CardBody>
-      </Card>
+      <SimpleGrid columns={{ base: 1, lg: 3 }} spacing={{ base: 4, md: 5 }} mb={{ base: 4, md: 5 }}>
+        <Box gridColumn={{ lg: 'span 2' }}>
+          <SectionCard
+            title="Today's prayers"
+            subtitle="Tap the circle to record a prayer, or choose how it was prayed"
+            icon={FaKaaba}
+            action={
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => actions.setAllPrayers(dateKey, 'ontime')}
+                isDisabled={summary.prayersCompleted === 5}
+              >
+                Mark all
+              </Button>
+            }
+          >
+            <PrayerChecklist
+              prayers={today.prayers}
+              times={times}
+              timeZone={location.timeZone}
+              onSetStatus={handleSetStatus}
+              currentPrayer={current}
+            />
+          </SectionCard>
+        </Box>
 
-      <Box mb={8}>
-        <Heading as="h2" size="lg" mb={4}>Historical Data</Heading>
-        <Tabs colorScheme="brand" isLazy>
-          <TabList>
-            <Tab>Prayers</Tab>
-            <Tab>Qur'an</Tab>
-            <Tab>Dhikr</Tab>
-            <Tab>Du'a</Tab>
-          </TabList>
-          <TabPanels>
-            <TabPanel>
-              <HistoricalDataChart 
-                title="Daily Prayers Completed" 
-                data={historicalData.prayers.data} 
-                labels={historicalData.prayers.labels}
-                type="bar"
-                color="rgba(76, 175, 80, 1)"
-              />
-            </TabPanel>
-            <TabPanel>
-              <HistoricalDataChart 
-                title="Qur'an Pages Read" 
-                data={historicalData.quran.data} 
-                labels={historicalData.quran.labels}
-                type="line"
-                color="rgba(33, 150, 243, 1)"
-              />
-            </TabPanel>
-            <TabPanel>
-              <HistoricalDataChart 
-                title="Daily Dhikr Count" 
-                data={historicalData.dhikr.data} 
-                labels={historicalData.dhikr.labels}
-                type="bar"
-                color="rgba(255, 193, 7, 1)"
-              />
-            </TabPanel>
-            <TabPanel>
-              <HistoricalDataChart 
-                title="Daily Du'a Recitations" 
-                data={historicalData.dua.data} 
-                labels={historicalData.dua.labels}
-                type="line"
-                color="rgba(255, 87, 34, 1)"
-              />
-            </TabPanel>
-          </TabPanels>
-        </Tabs>
-      </Box>
-
-      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
-        <Card>
-          <CardHeader bg="brand.500" color="white">
-            <Heading size="md">Recent Activity</Heading>
-          </CardHeader>
-          <CardBody>
-            <VStack align="stretch" spacing={3}>
-              <Text color="gray.500" textAlign="center">
-                Your recent activities will appear here as you track your worship.
-              </Text>
-            </VStack>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader bg="blue.500" color="white">
-            <Heading size="md">Tips & Reminders</Heading>
-          </CardHeader>
-          <CardBody>
-            <VStack align="stretch" spacing={3}>
-              <Alert status="info" borderRadius="md">
-                <AlertIcon />
-                <Box>
-                  <AlertTitle>New Feature!</AlertTitle>
-                  <AlertDescription>
-                    You can now add links to Du'as from Duas.org and other resources in the Du'a tracker.
-                  </AlertDescription>
-                </Box>
-              </Alert>
-              
-              <Alert status="success" borderRadius="md">
-                <AlertIcon />
-                <Box>
-                  <AlertTitle>Prayer Times Added!</AlertTitle>
-                  <AlertDescription>
-                    Prayer times are now available based on timeanddate.com sun data. Check the Prayer Tracker for accurate prayer times for your location.
-                  </AlertDescription>
-                </Box>
-              </Alert>
-              
-              <Text>
-                "The most beloved of deeds to Allah are those that are consistent, even if they are small."
-              </Text>
-              <Text fontSize="sm" color="gray.500">
-                - Prophet Muhammad (peace be upon him)
-              </Text>
-            </VStack>
-          </CardBody>
-        </Card>
+        <VStack spacing={{ base: 4, md: 5 }} align="stretch">
+          <SectionCard title="Consistency" icon={FiAward}>
+            <SimpleGrid columns={2} spacing={4}>
+              <Box>
+                <Heading size="2xl" color="accent.solid" lineHeight="1">
+                  {streak}
+                </Heading>
+                <Text fontSize="sm" color="text.muted" mt={1}>
+                  day prayer streak
+                </Text>
+              </Box>
+              <Box>
+                <Heading size="2xl" lineHeight="1">
+                  {consistency}%
+                </Heading>
+                <Text fontSize="sm" color="text.muted" mt={1}>
+                  prayers kept, 30 days
+                </Text>
+              </Box>
+            </SimpleGrid>
+            <Text fontSize="sm" color="text.secondary" mt={4}>
+              {activityStreak > 0
+                ? `You have recorded some act of worship ${activityStreak} ${
+                    activityStreak === 1 ? 'day' : 'days'
+                  } running.`
+                : 'Record anything today to begin a streak.'}
+            </Text>
+            <Button
+              as={RouterLink}
+              to="/history"
+              size="sm"
+              variant="outline"
+              mt={4}
+              w="100%"
+              leftIcon={<Icon as={FiTrendingUp} />}
+            >
+              View history
+            </Button>
+          </SectionCard>
+        </VStack>
       </SimpleGrid>
-    </Container>
+
+      <SimpleGrid columns={{ base: 1, lg: 3 }} spacing={{ base: 4, md: 5 }}>
+        <Box gridColumn={{ lg: 'span 2' }}>
+          <SectionCard
+            title="Trends"
+            subtitle={`Last ${range} days · from your own records`}
+            icon={FiTrendingUp}
+            action={
+              <HStack spacing={1}>
+                {([7, 30] as const).map((value) => (
+                  <Button
+                    key={value}
+                    size="xs"
+                    variant={range === value ? 'solid' : 'ghost'}
+                    onClick={() => setRange(value)}
+                  >
+                    {value}d
+                  </Button>
+                ))}
+              </HStack>
+            }
+          >
+            {hasAnyHistory ? (
+              <Tabs variant="soft-rounded" colorScheme="brand" size="sm" isLazy>
+                <TabList mb={3} overflowX="auto" py={1}>
+                  {METRIC_TABS.map((tab) => (
+                    <Tab key={tab.key} whiteSpace="nowrap">
+                      {tab.label}
+                    </Tab>
+                  ))}
+                </TabList>
+                <TabPanels>
+                  {METRIC_TABS.map((tab) => (
+                    <TabPanel key={tab.key} px={0} pb={0}>
+                      <TrendChart
+                        series={seriesByMetric[tab.key]}
+                        label={tab.label}
+                        type={tab.type}
+                        color={tab.color}
+                        suggestedMax={tab.suggestedMax}
+                      />
+                    </TabPanel>
+                  ))}
+                </TabPanels>
+              </Tabs>
+            ) : (
+              <EmptyState
+                icon={FiTrendingUp}
+                title="No history yet"
+                description="Charts appear here once you have recorded a day of worship. Nothing is simulated — these are your own numbers."
+                action={
+                  <Button as={RouterLink} to="/prayer" size="sm">
+                    Record today
+                  </Button>
+                }
+              />
+            )}
+
+            <Flex gap={6} mt={4} wrap="wrap" borderTopWidth="1px" borderColor="border.default" pt={4}>
+              <Stack spacing={0}>
+                <Text fontSize="xs" color="text.muted">
+                  Prayers kept
+                </Text>
+                <Text fontWeight="700">
+                  {totals.prayersCompleted}/{totals.prayersPossible}
+                </Text>
+              </Stack>
+              <Stack spacing={0}>
+                <Text fontSize="xs" color="text.muted">
+                  Qur'an pages
+                </Text>
+                <Text fontWeight="700">{totals.quranPages}</Text>
+              </Stack>
+              <Stack spacing={0}>
+                <Text fontSize="xs" color="text.muted">
+                  Dhikr
+                </Text>
+                <Text fontWeight="700">{totals.dhikrCount.toLocaleString()}</Text>
+              </Stack>
+              <Stack spacing={0}>
+                <Text fontSize="xs" color="text.muted">
+                  Complete days
+                </Text>
+                <Text fontWeight="700">{totals.completeDays}</Text>
+              </Stack>
+            </Flex>
+          </SectionCard>
+        </Box>
+
+        <PrayerTimesPanel />
+      </SimpleGrid>
+    </Box>
   );
 };
 
-export default Dashboard; 
+export default Dashboard;

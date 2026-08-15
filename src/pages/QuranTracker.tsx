@@ -1,438 +1,172 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Badge,
   Box,
-  Container,
-  Heading,
-  Text,
-  Card,
-  CardHeader,
-  CardBody,
   Button,
-  HStack,
-  VStack,
+  Divider,
+  Flex,
   FormControl,
+  FormHelperText,
   FormLabel,
-  Input,
+  HStack,
+  Icon,
+  IconButton,
+  NumberDecrementStepper,
+  NumberIncrementStepper,
   NumberInput,
   NumberInputField,
   NumberInputStepper,
-  NumberIncrementStepper,
-  NumberDecrementStepper,
+  Progress,
   Select,
+  SimpleGrid,
   Stat,
+  StatHelpText,
   StatLabel,
   StatNumber,
-  StatHelpText,
+  Text,
+  Textarea,
+  VStack,
   useToast,
-  Progress,
-  Divider,
-  SimpleGrid,
-  useColorModeValue
 } from '@chakra-ui/react';
-import { format, subDays } from 'date-fns';
-
-interface ReadingEntry {
-  id: string;
-  date: string;
-  surah: number;
-  startVerse: number;
-  endVerse: number;
-  pages: number;
-  notes: string;
-}
-
-interface QuranData {
-  pagesRead: number;
-  totalPages: number;
-  lastUpdated: string;
-  dailyGoal: number;
-}
+import { FiBookOpen, FiBookmark, FiPlus, FiTrash2 } from 'react-icons/fi';
+import PageHeader from '../components/ui/PageHeader';
+import { EmptyState, SectionCard } from '../components/ui/Cards';
+import DateNavigator from '../components/DateNavigator';
+import { useActions, useAppState } from '../hooks/appState';
+import { todayKey } from '../lib/dates';
+import { getDay, totalQuranMinutes, totalQuranPages, totalsForRange } from '../lib/stats';
+import {
+  SURAHS,
+  TOTAL_QURAN_PAGES,
+  estimatePages,
+  getSurah,
+  surahLabel,
+} from '../data/surahs';
 
 const QuranTracker: React.FC = () => {
+  const state = useAppState();
+  const actions = useActions();
   const toast = useToast();
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [entries, setEntries] = useState<ReadingEntry[]>([]);
-  const [stats, setStats] = useState({
-    totalPages: 0,
-    streak: 0,
-    pagesThisWeek: 0,
-    completions: 0
-  });
+  const [dateKey, setDateKey] = useState<string>(todayKey());
 
-  // Form state
-  const [surah, setSurah] = useState<number>(1);
-  const [startVerse, setStartVerse] = useState<number>(1);
-  const [endVerse, setEndVerse] = useState<number>(7);
-  const [pages, setPages] = useState<number>(1);
-  const [notes, setNotes] = useState<string>('');
+  const day = getDay(state, dateKey);
+  const pagesToday = totalQuranPages(day);
+  const minutesToday = totalQuranMinutes(day);
+  const goal = state.settings.goals.quranPages;
+  const weekly = useMemo(() => totalsForRange(state, 7), [state]);
 
-  const [quranData, setQuranData] = useState<QuranData>({
-    pagesRead: 0,
-    totalPages: 604, // Standard Quran has 604 pages
-    lastUpdated: new Date().toISOString(),
-    dailyGoal: 4,
-  });
+  const [surah, setSurah] = useState<number>(state.quran.bookmark.surah);
+  const [startAyah, setStartAyah] = useState<number>(state.quran.bookmark.ayah);
+  const [endAyah, setEndAyah] = useState<number>(state.quran.bookmark.ayah);
+  const [pages, setPages] = useState<number>(0);
+  const [pagesTouched, setPagesTouched] = useState(false);
+  const [minutes, setMinutes] = useState<number>(0);
+  const [notes, setNotes] = useState('');
 
-  const [pagesToAdd, setPagesToAdd] = useState<number>(1);
-  
-  const cardBg = useColorModeValue('white', 'gray.700');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const selectedSurah = getSurah(surah);
+  const maxAyah = selectedSurah?.ayahs ?? 1;
+  const estimated = useMemo(
+    () => estimatePages(surah, startAyah, endAyah),
+    [surah, startAyah, endAyah],
+  );
 
-  // Load data from localStorage on component mount
+  // Keep the page estimate in step with the ayah range until the user overrides it.
   useEffect(() => {
-    const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    const storedEntries = localStorage.getItem(`quran_entries_${dateStr}`);
-    if (storedEntries) {
-      setEntries(JSON.parse(storedEntries));
-    } else {
-      setEntries([]);
-    }
-    
-    // Load stats
-    const storedStats = localStorage.getItem('quran_stats');
-    if (storedStats) {
-      setStats(JSON.parse(storedStats));
-    }
+    if (!pagesTouched) setPages(estimated);
+  }, [estimated, pagesTouched]);
 
-    // Load Quran data from localStorage
-    const loadQuranData = () => {
-      const savedData = localStorage.getItem('quranData');
-      if (savedData) {
-        setQuranData(JSON.parse(savedData));
-      }
-    };
-
-    loadQuranData();
-  }, [selectedDate]);
-
-  // Save data to localStorage whenever entries change
+  // Clamp the ayah range whenever the surah changes.
   useEffect(() => {
-    const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    localStorage.setItem(`quran_entries_${dateStr}`, JSON.stringify(entries));
-    
-    // Update stats
-    if (entries.length > 0) {
-      const totalPagesRead = entries.reduce((sum, entry) => sum + entry.pages, 0);
-      
-      // Calculate pages read in the last 7 days
-      let pagesThisWeek = 0;
-      for (let i = 0; i < 7; i++) {
-        const date = format(subDays(new Date(), i), 'yyyy-MM-dd');
-        const dailyEntries = localStorage.getItem(`quran_entries_${date}`);
-        if (dailyEntries) {
-          const parsed = JSON.parse(dailyEntries);
-          pagesThisWeek += parsed.reduce((sum: number, entry: ReadingEntry) => sum + entry.pages, 0);
-        }
-      }
-      
-      const newStats = {
-        ...stats,
-        totalPages: stats.totalPages + totalPagesRead,
-        pagesThisWeek,
-      };
-      
-      setStats(newStats);
-      localStorage.setItem('quran_stats', JSON.stringify(newStats));
-    }
-  }, [entries, selectedDate]);
+    setStartAyah((value) => Math.min(Math.max(1, value), maxAyah));
+    setEndAyah((value) => Math.min(Math.max(1, value), maxAyah));
+  }, [maxAyah]);
 
-  const handleAddEntry = () => {
-    const newEntry: ReadingEntry = {
-      id: Date.now().toString(),
-      date: format(selectedDate, 'yyyy-MM-dd'),
+  const rangeInvalid = endAyah < startAyah;
+
+  const handleAdd = () => {
+    if (rangeInvalid) return;
+    const finalPages = Math.max(0, pages);
+    actions.addQuranEntry(dateKey, {
       surah,
-      startVerse,
-      endVerse,
-      pages,
-      notes
-    };
-    
-    setEntries([...entries, newEntry]);
-    
-    // Reset form
-    setSurah(1);
-    setStartVerse(1);
-    setEndVerse(7);
-    setPages(1);
+      startAyah,
+      endAyah,
+      pages: finalPages,
+      minutes: Math.max(0, minutes),
+      notes: notes.trim(),
+    });
+    actions.addKhatmPages(finalPages);
+
+    // Move the bookmark on so the next session starts where this one ended.
+    const next = endAyah >= maxAyah ? { surah: Math.min(surah + 1, 114), ayah: 1 } : { surah, ayah: endAyah + 1 };
+    actions.setBookmark(next.surah, next.ayah);
+    setSurah(next.surah);
+    setStartAyah(next.ayah);
+    setEndAyah(next.ayah);
+    setPagesTouched(false);
+    setMinutes(0);
     setNotes('');
-    
+
     toast({
-      title: "Reading entry added",
-      status: "success",
-      duration: 2000,
-      isClosable: true,
-    });
-  };
-
-  const handleDateChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const daysAgo = parseInt(event.target.value);
-    const newDate = new Date();
-    newDate.setDate(newDate.getDate() - daysAgo);
-    setSelectedDate(newDate);
-  };
-
-  const handleDeleteEntry = (id: string) => {
-    setEntries(entries.filter(entry => entry.id !== id));
-    
-    toast({
-      title: "Entry deleted",
-      status: "info",
-      duration: 2000,
-      isClosable: true,
-    });
-  };
-
-  // Generate array of Surahs for the dropdown
-  const surahs = Array.from({ length: 114 }, (_, i) => i + 1);
-
-  const handleAddPages = () => {
-    const newPagesRead = Math.min(quranData.pagesRead + pagesToAdd, quranData.totalPages);
-    
-    const updatedData = {
-      ...quranData,
-      pagesRead: newPagesRead,
-      lastUpdated: new Date().toISOString(),
-    };
-    
-    setQuranData(updatedData);
-    localStorage.setItem('quranData', JSON.stringify(updatedData));
-    
-    toast({
-      title: 'Progress Updated',
-      description: `You've added ${pagesToAdd} page(s) to your Qur'an reading progress.`,
+      title: 'Reading recorded',
+      description: `${surahLabel(surah)} · ${startAyah}–${endAyah}`,
       status: 'success',
-      duration: 3000,
+      duration: 2000,
       isClosable: true,
+      position: 'bottom',
     });
   };
 
-  const handleResetProgress = () => {
-    const resetData = {
-      ...quranData,
-      pagesRead: 0,
-      lastUpdated: new Date().toISOString(),
-    };
-    
-    setQuranData(resetData);
-    localStorage.setItem('quranData', JSON.stringify(resetData));
-    
-    toast({
-      title: 'Progress Reset',
-      description: 'Your Qur\'an reading progress has been reset to 0.',
-      status: 'info',
-      duration: 3000,
-      isClosable: true,
-    });
-  };
-
-  const handleUpdateGoal = (value: number) => {
-    const updatedData = {
-      ...quranData,
-      dailyGoal: value,
-    };
-    
-    setQuranData(updatedData);
-    localStorage.setItem('quranData', JSON.stringify(updatedData));
-  };
-
-  const progressPercentage = (quranData.pagesRead / quranData.totalPages) * 100;
+  const khatmPercent = (state.quran.khatmPages / TOTAL_QURAN_PAGES) * 100;
 
   return (
-    <Container maxW="container.xl" py={8}>
-      <Box textAlign="center" mb={8}>
-        <Heading as="h1" size="xl" mb={2}>Qur'an Reading Tracker</Heading>
-        <Text fontSize="lg" color="gray.600">Track your daily Qur'an recitation</Text>
-      </Box>
+    <Box>
+      <PageHeader
+        eyebrow="Tilawah"
+        title="Qur'an tracker"
+        description="Log what you read, keep your place, and follow your progress towards a khatm."
+        actions={<DateNavigator value={dateKey} onChange={setDateKey} />}
+      />
 
-      <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={8}>
-        <VStack spacing={6} align="stretch">
-          <Card>
-            <CardHeader bg="green.500" color="white">
-              <Heading size="md">Add New Reading Entry</Heading>
-            </CardHeader>
-            <CardBody>
-              <VStack spacing={4}>
-                <FormControl>
-                  <FormLabel>Date</FormLabel>
-                  <Select value={(new Date().getTime() - selectedDate.getTime()) / (1000 * 60 * 60 * 24)} onChange={handleDateChange}>
-                    <option value={0}>Today</option>
-                    <option value={1}>Yesterday</option>
-                    <option value={2}>2 days ago</option>
-                    <option value={3}>3 days ago</option>
-                    <option value={4}>4 days ago</option>
-                    <option value={5}>5 days ago</option>
-                    <option value={6}>6 days ago</option>
-                  </Select>
-                </FormControl>
-                
-                <FormControl>
-                  <FormLabel>Surah</FormLabel>
-                  <Select value={surah} onChange={(e) => setSurah(parseInt(e.target.value))}>
-                    {surahs.map(num => (
-                      <option key={num} value={num}>
-                        {num}. Surah {num}
-                      </option>
-                    ))}
-                  </Select>
-                </FormControl>
-                
-                <HStack>
-                  <FormControl>
-                    <FormLabel>Start Verse</FormLabel>
-                    <NumberInput min={1} value={startVerse} onChange={(_, val) => setStartVerse(val)}>
-                      <NumberInputField />
-                      <NumberInputStepper>
-                        <NumberIncrementStepper />
-                        <NumberDecrementStepper />
-                      </NumberInputStepper>
-                    </NumberInput>
-                  </FormControl>
-                  
-                  <FormControl>
-                    <FormLabel>End Verse</FormLabel>
-                    <NumberInput min={startVerse} value={endVerse} onChange={(_, val) => setEndVerse(val)}>
-                      <NumberInputField />
-                      <NumberInputStepper>
-                        <NumberIncrementStepper />
-                        <NumberDecrementStepper />
-                      </NumberInputStepper>
-                    </NumberInput>
-                  </FormControl>
-                </HStack>
-                
-                <FormControl>
-                  <FormLabel>Pages Read</FormLabel>
-                  <NumberInput min={1} max={604} value={pages} onChange={(_, val) => setPages(val)}>
-                    <NumberInputField />
-                    <NumberInputStepper>
-                      <NumberIncrementStepper />
-                      <NumberDecrementStepper />
-                    </NumberInputStepper>
-                  </NumberInput>
-                </FormControl>
-                
-                <FormControl>
-                  <FormLabel>Notes</FormLabel>
-                  <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add any notes about your reading" />
-                </FormControl>
-                
-                <Button colorScheme="green" onClick={handleAddEntry} width="full">
-                  Add Entry
-                </Button>
-              </VStack>
-            </CardBody>
-          </Card>
-          
-          <Card>
-            <CardHeader bg="blue.500" color="white">
-              <Heading size="md">Your Progress</Heading>
-            </CardHeader>
-            <CardBody>
-              <VStack spacing={4} align="stretch">
-                <Stat>
-                  <StatLabel>Total Pages Read</StatLabel>
-                  <StatNumber>{quranData.pagesRead} / {quranData.totalPages}</StatNumber>
-                </Stat>
-                
-                <Box>
-                  <Text mb={1}>Progress through Qur'an</Text>
-                  <Progress value={progressPercentage} colorScheme="green" rounded="md" />
-                  <Text mt={1} fontSize="sm" textAlign="right">
-                    {Math.round(progressPercentage)}%
-                  </Text>
-                </Box>
-                
-                <Divider />
-                
-                <Stat>
-                  <StatLabel>Daily Goal</StatLabel>
-                  <StatNumber>{quranData.dailyGoal} pages</StatNumber>
-                </Stat>
-              </VStack>
-            </CardBody>
-          </Card>
-        </VStack>
-        
-        <VStack spacing={4} align="stretch">
-          <Heading size="md">Today's Reading Entries</Heading>
-          {entries.length === 0 ? (
-            <Card>
-              <CardBody>
-                <Text color="gray.500" textAlign="center">No entries for {format(selectedDate, 'EEEE, MMMM d, yyyy')}</Text>
-              </CardBody>
-            </Card>
-          ) : (
-            entries.map(entry => (
-              <Card key={entry.id}>
-                <CardHeader bg="gray.50" pb={2}>
-                  <HStack justify="space-between">
-                    <Heading size="sm">
-                      Surah {entry.surah}: Verses {entry.startVerse}-{entry.endVerse}
-                    </Heading>
-                    <Text>{entry.pages} pages</Text>
-                  </HStack>
-                </CardHeader>
-                <CardBody pt={2}>
-                  <VStack align="stretch" spacing={2}>
-                    {entry.notes && (
-                      <Text fontSize="sm" color="gray.600">{entry.notes}</Text>
-                    )}
-                    <HStack justify="flex-end">
-                      <Button size="sm" colorScheme="red" variant="ghost" onClick={() => handleDeleteEntry(entry.id)}>
-                        Delete
-                      </Button>
-                    </HStack>
-                  </VStack>
-                </CardBody>
-              </Card>
-            ))
-          )}
-        </VStack>
-      </SimpleGrid>
-
-      <Card mt={6} bg={cardBg} borderWidth="1px" borderColor={borderColor} borderRadius="lg">
-        <CardHeader pb={2}>
-          <Heading size="md">Qur'an Progress</Heading>
-        </CardHeader>
-        <CardBody>
-          <VStack align="stretch" spacing={4}>
-            <Box>
-              <HStack justify="space-between" mb={1}>
-                <Text fontWeight="bold">Pages Read: {quranData.pagesRead} / {quranData.totalPages}</Text>
-                <Text>{progressPercentage.toFixed(1)}%</Text>
-              </HStack>
-              <Progress value={progressPercentage} colorScheme="green" borderRadius="md" size="md" />
-            </Box>
-            
-            <Box>
-              <Text fontWeight="bold" mb={1}>Daily Goal: {quranData.dailyGoal} pages</Text>
+      <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={{ base: 4, md: 5 }}>
+        <VStack spacing={{ base: 4, md: 5 }} align="stretch">
+          <SectionCard title="Record a reading" icon={FiPlus}>
+            <VStack spacing={4} align="stretch">
               <FormControl>
-                <FormLabel>Update Daily Goal</FormLabel>
-                <NumberInput 
-                  min={1} 
-                  max={30} 
-                  value={quranData.dailyGoal} 
-                  onChange={(_, value) => handleUpdateGoal(value)}
+                <FormLabel fontSize="sm">Surah</FormLabel>
+                <Select
+                  value={surah}
+                  onChange={(event) => {
+                    setSurah(Number(event.target.value));
+                    setPagesTouched(false);
+                  }}
                 >
-                  <NumberInputField />
-                  <NumberInputStepper>
-                    <NumberIncrementStepper />
-                    <NumberDecrementStepper />
-                  </NumberInputStepper>
-                </NumberInput>
+                  {SURAHS.map((item) => (
+                    <option key={item.number} value={item.number}>
+                      {item.number}. {item.name} — {item.ayahs} ayahs
+                    </option>
+                  ))}
+                </Select>
+                {selectedSurah && (
+                  <FormHelperText>
+                    <Text as="span" className="arabic" fontSize="md" display="inline-block">
+                      {selectedSurah.arabic}
+                    </Text>{' '}
+                    · Revealed in {selectedSurah.revelation}
+                  </FormHelperText>
+                )}
               </FormControl>
-            </Box>
-            
-            <Box>
-              <FormControl>
-                <FormLabel>Add Pages Read</FormLabel>
-                <HStack>
-                  <NumberInput 
-                    min={1} 
-                    max={100} 
-                    value={pagesToAdd} 
-                    onChange={(_, value) => setPagesToAdd(value)}
-                    flex="1"
+
+              <SimpleGrid columns={2} spacing={3}>
+                <FormControl isInvalid={rangeInvalid}>
+                  <FormLabel fontSize="sm">From ayah</FormLabel>
+                  <NumberInput
+                    min={1}
+                    max={maxAyah}
+                    value={startAyah}
+                    onChange={(_, value) => {
+                      setStartAyah(Number.isNaN(value) ? 1 : value);
+                      setPagesTouched(false);
+                    }}
                   >
                     <NumberInputField />
                     <NumberInputStepper>
@@ -440,21 +174,252 @@ const QuranTracker: React.FC = () => {
                       <NumberDecrementStepper />
                     </NumberInputStepper>
                   </NumberInput>
-                  <Button colorScheme="green" onClick={handleAddPages}>
-                    Add Pages
-                  </Button>
-                </HStack>
+                </FormControl>
+
+                <FormControl isInvalid={rangeInvalid}>
+                  <FormLabel fontSize="sm">To ayah</FormLabel>
+                  <NumberInput
+                    min={1}
+                    max={maxAyah}
+                    value={endAyah}
+                    onChange={(_, value) => {
+                      setEndAyah(Number.isNaN(value) ? 1 : value);
+                      setPagesTouched(false);
+                    }}
+                  >
+                    <NumberInputField />
+                    <NumberInputStepper>
+                      <NumberIncrementStepper />
+                      <NumberDecrementStepper />
+                    </NumberInputStepper>
+                  </NumberInput>
+                </FormControl>
+              </SimpleGrid>
+
+              {rangeInvalid && (
+                <Text fontSize="sm" color="red.500">
+                  The last ayah must not come before the first.
+                </Text>
+              )}
+
+              <SimpleGrid columns={2} spacing={3}>
+                <FormControl>
+                  <FormLabel fontSize="sm">Pages</FormLabel>
+                  <NumberInput
+                    min={0}
+                    max={TOTAL_QURAN_PAGES}
+                    step={0.5}
+                    precision={1}
+                    value={pages}
+                    onChange={(_, value) => {
+                      setPagesTouched(true);
+                      setPages(Number.isNaN(value) ? 0 : value);
+                    }}
+                  >
+                    <NumberInputField />
+                    <NumberInputStepper>
+                      <NumberIncrementStepper />
+                      <NumberDecrementStepper />
+                    </NumberInputStepper>
+                  </NumberInput>
+                  <FormHelperText>Estimated from your ayah range</FormHelperText>
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel fontSize="sm">Minutes</FormLabel>
+                  <NumberInput
+                    min={0}
+                    max={600}
+                    value={minutes}
+                    onChange={(_, value) => setMinutes(Number.isNaN(value) ? 0 : value)}
+                  >
+                    <NumberInputField />
+                    <NumberInputStepper>
+                      <NumberIncrementStepper />
+                      <NumberDecrementStepper />
+                    </NumberInputStepper>
+                  </NumberInput>
+                  <FormHelperText>Optional</FormHelperText>
+                </FormControl>
+              </SimpleGrid>
+
+              <FormControl>
+                <FormLabel fontSize="sm">Notes</FormLabel>
+                <Textarea
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  placeholder="A reflection, a word to look up, a verse to return to…"
+                  rows={2}
+                  resize="vertical"
+                />
               </FormControl>
-            </Box>
-          </VStack>
-        </CardBody>
-      </Card>
-      
-      <Button colorScheme="red" variant="outline" onClick={handleResetProgress} mt={4} width="full">
-        Reset Progress
-      </Button>
-    </Container>
+
+              <Button
+                onClick={handleAdd}
+                isDisabled={rangeInvalid}
+                leftIcon={<Icon as={FiPlus} />}
+                w="100%"
+              >
+                Add reading
+              </Button>
+            </VStack>
+          </SectionCard>
+
+          <SectionCard title="Khatm progress" icon={FiBookmark}>
+            <Stat mb={3}>
+              <StatLabel color="text.muted">Pages this khatm</StatLabel>
+              <StatNumber>
+                {Math.round(state.quran.khatmPages * 10) / 10} / {TOTAL_QURAN_PAGES}
+              </StatNumber>
+              <StatHelpText>
+                {state.quran.khatmCount > 0
+                  ? `${state.quran.khatmCount} completed khatm${state.quran.khatmCount === 1 ? '' : 's'}`
+                  : 'Your first khatm is under way'}
+              </StatHelpText>
+            </Stat>
+            <Progress value={khatmPercent} size="md" mb={2} aria-label="Khatm progress" />
+            <Flex justify="space-between">
+              <Text fontSize="sm" color="text.muted">
+                {khatmPercent.toFixed(1)}% complete
+              </Text>
+              <Button size="xs" variant="ghost" colorScheme="red" onClick={actions.resetKhatm}>
+                Reset khatm
+              </Button>
+            </Flex>
+
+            <Divider my={4} />
+
+            <HStack justify="space-between">
+              <Box>
+                <Text fontSize="sm" color="text.muted">
+                  Bookmark
+                </Text>
+                <Text fontWeight="600">
+                  {surahLabel(state.quran.bookmark.surah)} · ayah {state.quran.bookmark.ayah}
+                </Text>
+              </Box>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setSurah(state.quran.bookmark.surah);
+                  setStartAyah(state.quran.bookmark.ayah);
+                  setEndAyah(state.quran.bookmark.ayah);
+                  setPagesTouched(false);
+                }}
+              >
+                Continue
+              </Button>
+            </HStack>
+          </SectionCard>
+        </VStack>
+
+        <VStack spacing={{ base: 4, md: 5 }} align="stretch">
+          <SectionCard
+            title="Today's reading"
+            subtitle={`${pagesToday} page${pagesToday === 1 ? '' : 's'}${
+              minutesToday ? ` · ${minutesToday} min` : ''
+            }`}
+            icon={FiBookOpen}
+          >
+            {goal > 0 && (
+              <Box mb={4}>
+                <Flex justify="space-between" mb={1}>
+                  <Text fontSize="sm" color="text.muted">
+                    Daily goal
+                  </Text>
+                  <Text fontSize="sm" fontWeight="600">
+                    {pagesToday} / {goal} pages
+                  </Text>
+                </Flex>
+                <Progress
+                  value={(pagesToday / goal) * 100}
+                  size="sm"
+                  colorScheme={pagesToday >= goal ? 'brand' : 'lapis'}
+                  aria-label="Daily reading goal"
+                />
+              </Box>
+            )}
+
+            {day.quran.length === 0 ? (
+              <EmptyState
+                icon={FiBookOpen}
+                title="Nothing recorded yet"
+                description="Add a reading on the left and it will appear here."
+              />
+            ) : (
+              <VStack spacing={2} align="stretch">
+                {day.quran.map((entry) => (
+                  <Flex
+                    key={entry.id}
+                    align="flex-start"
+                    gap={3}
+                    p={3}
+                    borderWidth="1px"
+                    borderColor="border.default"
+                    borderRadius="xl"
+                  >
+                    <Box flex="1" minW={0}>
+                      <HStack spacing={2} mb={1} wrap="wrap">
+                        <Text fontWeight="600">{surahLabel(entry.surah)}</Text>
+                        <Badge colorScheme="lapis" variant="subtle">
+                          {entry.startAyah}–{entry.endAyah}
+                        </Badge>
+                      </HStack>
+                      <Text fontSize="sm" color="text.muted">
+                        {entry.pages} page{entry.pages === 1 ? '' : 's'}
+                        {entry.minutes > 0 && ` · ${entry.minutes} min`}
+                      </Text>
+                      {entry.notes && (
+                        <Text fontSize="sm" color="text.secondary" mt={1.5}>
+                          {entry.notes}
+                        </Text>
+                      )}
+                    </Box>
+                    <IconButton
+                      aria-label={`Delete reading of ${surahLabel(entry.surah)}`}
+                      icon={<Icon as={FiTrash2} />}
+                      size="sm"
+                      variant="ghost"
+                      colorScheme="red"
+                      onClick={() => {
+                        actions.deleteQuranEntry(dateKey, entry.id);
+                        actions.addKhatmPages(-entry.pages);
+                        toast({
+                          title: 'Reading removed',
+                          status: 'info',
+                          duration: 1800,
+                          isClosable: true,
+                          position: 'bottom',
+                        });
+                      }}
+                    />
+                  </Flex>
+                ))}
+              </VStack>
+            )}
+          </SectionCard>
+
+          <SectionCard title="This week" icon={FiBookOpen}>
+            <SimpleGrid columns={3} spacing={4}>
+              <Stat>
+                <StatLabel color="text.muted">Pages</StatLabel>
+                <StatNumber>{weekly.quranPages}</StatNumber>
+              </Stat>
+              <Stat>
+                <StatLabel color="text.muted">Minutes</StatLabel>
+                <StatNumber>{weekly.quranMinutes}</StatNumber>
+              </Stat>
+              <Stat>
+                <StatLabel color="text.muted">Daily average</StatLabel>
+                <StatNumber>{Math.round((weekly.quranPages / 7) * 10) / 10}</StatNumber>
+              </Stat>
+            </SimpleGrid>
+          </SectionCard>
+        </VStack>
+      </SimpleGrid>
+    </Box>
   );
 };
 
-export default QuranTracker; 
+export default QuranTracker;

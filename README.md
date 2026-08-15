@@ -1,189 +1,169 @@
 # Abadaat Tracker
 
-A web application to track various forms of Islamic worship (abadaat) including prayers, Qur'an reading, dhikr, du'a, and more.
+A private, offline-first tracker for daily acts of worship — salah, Qur'an, dhikr and du'a —
+with prayer times computed from the sun's position for any location on earth.
 
-## Project Overview
+Everything is stored in your own browser. There is no account, no server and no analytics.
 
-The Abadaat Tracker helps Muslims keep track of their daily worship activities and visualize their progress over time. The application provides a simple and intuitive interface to log different types of worship and view trends through charts and statistics.
+---
 
 ## Features
 
-- Track multiple forms of worship:
-  - Daily prayers (Salah) with prayer times display
-  - Qur'an reading
-  - Dhikr (remembrance of Allah)
-  - Du'a (supplication) with links to online resources
-- Visualize progress with interactive charts and trends
-- Islamic-themed UI with green color palette
-- Responsive design for all devices
-- Data persistence using local storage
-- Dark/Light mode toggle
-- Prayer streak tracking
-- Milton Keynes prayer times based on astronomical data
-- Solar midnight indicator for Isha qadha time
+### Prayer
 
-## Components
+- **Real prayer times.** Fajr, sunrise, Dhuhr, Asr, Maghrib, Isha and Islamic midnight are
+  derived from the sun's declination and the equation of time for your exact coordinates and
+  date — not looked up from a table.
+- **Seven calculation methods**, including Ja'fari (the default), Tehran, MWL, ISNA, Egypt,
+  Umm al-Qura and Karachi, with a standard/Hanafi Asr option and per-prayer minute adjustments.
+- **Islamic midnight**, measured either from sunset to Fajr (Ja'fari) or sunset to sunrise, so
+  the app can tell you when Isha becomes qadha.
+- **High-latitude rules** (middle of the night, one seventh, angle based) for summers in the
+  north, where twilight never truly ends.
+- **Status per prayer** — in jama'ah, on time, late, or qadha — not just a tick.
+- **Qibla finder** with the true bearing and distance to the Kaaba, plus a live compass on
+  devices that expose one.
+- **Prayer reminders** through browser notifications, at a lead time you choose.
 
-- **Dashboard**: Overview of all worship activities with statistics and charts
-- **Prayer Tracker**: Track your five daily prayers and view prayer times
-- **Quran Tracker**: Log your Qur'an reading progress
-- **Dhikr Tracker**: Count and track different forms of dhikr
-- **Du'a Tracker**: Record your du'a recitations and add links to online resources
-- **Prayer Times Display**: View prayer times for Milton Keynes based on astronomical data
-- **Historical Data Charts**: Visualize your worship trends over time
+### Qur'an
 
-## Recent Updates
+- Log readings by surah and ayah range, with all 114 surahs listed by name in Arabic and
+  transliteration.
+- Page counts estimated from the ayah range, and editable.
+- A bookmark that advances automatically so you always know where you left off.
+- Khatm progress towards the 604-page mushaf, with a completed-khatm counter.
 
-### Prayer Times Feature (Latest)
-- Updated to use Milton Keynes astronomical data for prayer times
-- Implemented correct Islamic prayer time calculation methods
-- Added solar midnight indicator (when Isha becomes qadha)
-- Real-time display of current time and next prayer
-- Visual indicators for current, upcoming, and passed prayers
-- Direct link to timeanddate.com for detailed sun data
-- Prayer streak tracking to monitor consistency
+### Dhikr
 
-### Prayer Times Calculation Method
-The application now uses astronomical data for Milton Keynes to calculate prayer times according to Islamic rules:
-- **Fajr**: Based on nautical twilight start (sun is 12° below horizon)
-- **Dhuhr**: Based on solar noon (when sun reaches highest point)
-- **Asr**: Calculated as midpoint between Dhuhr and sunset
-- **Maghrib**: 20 minutes after sunset
-- **Isha**: Midpoint between sunset and solar midnight
-- **Solar Midnight**: Opposite of solar noon (when Isha becomes qadha)
+- Per-day counters, so each day's remembrance is recorded separately.
+- Built-in adhkar with Arabic text, transliteration and daily targets, plus your own.
+- A full-screen counter with a large tap target, keyboard support and haptic feedback.
+- The Tasbih of az-Zahra (a) — 34 · 33 · 33 — tracked as a set.
 
-The data is derived from timeanddate.com's astronomical calculations for Milton Keynes, UK.
+### Du'a
 
-### Du'a Links Feature
-- Added ability to include links to online du'a resources
-- Integration with popular sites like Duas.org
-- Quick access to du'a references
-- Sample du'as with links to their sources
+- A starter library of du'as and ziyarat from the Shia tradition, each with Arabic,
+  translation, category and a link to its source.
+- Search, category filters and favourites.
+- Add, edit or hide any entry.
 
-### UI Improvements
-- Enhanced responsive design
-- British English spelling throughout the application
-- Improved navigation and user experience
-- Better visual feedback for completed actions
-- Dark mode support for all components
+### Review
 
-## Project Status
+- A dashboard showing today at a glance and your real trends — never simulated data.
+- History with a 13-week activity heatmap, per-metric charts, current and best streaks, and a
+  breakdown of which prayers slip most often.
+- Daily goals for pages, dhikr and du'a.
+- Hijri date, with a manual offset for your local moon sighting.
 
-- [x] Project structure setup
-- [x] Basic UI components
-- [x] Islamic-themed styling
-- [x] Prayer tracking functionality
-- [x] Qur'an reading tracker
-- [x] Dhikr counter implementation
-- [x] Du'a tracking
-- [x] Data visualization with Chart.js
-- [x] Local storage implementation
-- [x] Du'a links to online resources
-- [x] Milton Keynes prayer times based on astronomical data
-- [x] Solar midnight indicator for Isha qadha time
-- [ ] User authentication (future)
-- [ ] Cloud synchronization (future)
-- [ ] Qibla direction finder (future)
-- [ ] Prayer time notifications (future)
-- [ ] Support for multiple locations (future)
+### Throughout
 
-## Technology Stack
+- Responsive from phone to desktop: a sidebar on large screens, a drawer and thumb-reachable
+  bottom bar on small ones.
+- Light and dark themes, following your system preference by default.
+- Keyboard accessible, with a skip link, visible focus rings and labelled controls.
+- Export and import your data as JSON.
 
-- React 18
-- TypeScript
-- Chakra UI for component library
-- Chart.js and React-Chartjs-2 for data visualization
-- React Router for navigation
-- Local Storage for data persistence
-- React Icons for UI icons
-- Date-fns for date manipulation
-- Astronomical data for Milton Keynes prayer times
+---
 
-## Getting Started
+## Getting started
 
-### Prerequisites
-
-- Node.js (v14 or higher)
-- npm or yarn
-
-### Installation
-
-1. Clone the repository
-```bash
-git clone https://github.com/yourusername/abadaat-tracker.git
-cd abadaat-tracker
-```
-
-2. Install dependencies
 ```bash
 npm install
-# or
-yarn install
 ```
 
-3. Start the development server
 ```bash
 npm run dev
-# or
-yarn dev
 ```
 
-4. Open your browser and navigate to `http://localhost:5173`
+The app runs at <http://localhost:5173>.
 
-## Usage
+### Scripts
 
-- **Dashboard**: View an overview of all your worship activities
-- **Prayer Tracker**: Mark your daily prayers as completed and view prayer times
-- **Quran Tracker**: Log the pages or verses you've read
-- **Dhikr Tracker**: Use the counter to track different forms of dhikr
-- **Du'a Tracker**: Record your du'a recitations and add links to online resources
+| Script | What it does |
+| --- | --- |
+| `npm run dev` | Start the development server |
+| `npm run build` | Typecheck and build for production |
+| `npm run preview` | Serve the production build locally |
+| `npm test` | Run the test suite once |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run coverage` | Run tests with a coverage report |
+| `npm run typecheck` | Typecheck without emitting |
+| `npm run lint` | Lint with ESLint |
+| `npm run verify` | Typecheck, test and build |
 
-## Prayer Times Feature
+---
 
-### Current Implementation
-The prayer times feature displays accurate prayer times for Milton Keynes, UK:
-- Times are calculated based on astronomical data for Milton Keynes
-- The app shows the current date and time
-- Prayer times are highlighted based on their status (current, upcoming, or passed)
-- The next prayer is prominently displayed
-- Solar midnight is shown to indicate when Isha becomes qadha
+## How prayer times are calculated
 
-### Prayer Time Calculation Method
-Prayer times are calculated using the following astronomical events and Islamic rules:
-- **Fajr**: Nautical twilight start (sun is 12° below horizon)
-- **Dhuhr**: Solar noon (when sun reaches highest point)
-- **Asr**: Midpoint between Dhuhr and sunset
-- **Maghrib**: 20 minutes after sunset
-- **Isha**: Midpoint between sunset and solar midnight
-- **Solar Midnight**: Opposite of solar noon (when Isha becomes qadha)
+For a given date and location the app computes the sun's declination and the equation of time,
+then solves for the hour angle at which the sun reaches each required altitude:
 
-### Data Source
-The prayer times data is derived from timeanddate.com's astronomical calculations for Milton Keynes, UK. The application uses this data to calculate prayer times according to Islamic rules.
+| Time | Definition |
+| --- | --- |
+| Fajr | Sun at the method's twilight angle below the horizon (16° for Ja'fari) |
+| Sunrise | Sun's upper limb on the horizon, allowing for refraction |
+| Dhuhr | Solar noon |
+| Asr | Shadow equal to an object's height (×2 for Hanafi), plus its noon shadow |
+| Maghrib | Sun 4° below the horizon (Ja'fari), or sunset for other methods |
+| Isha | Sun 14° below the horizon (Ja'fari), or the method's angle or offset |
+| Islamic midnight | Midpoint from sunset to Fajr (Ja'fari) or to sunrise |
 
-## Future Enhancements
+Results are converted to the location's civil time using its IANA time zone, so daylight saving
+is handled correctly. Cross-checked against published sun data for Milton Keynes at the
+equinox, midsummer and midwinter — see `src/lib/prayerTimes.test.ts`.
 
-1. **Multiple Locations**: Add support for multiple cities beyond Milton Keynes
-2. **Custom Prayer Time Adjustments**: Allow users to adjust prayer times based on their preferred calculation method
-3. **Prayer Time Notifications**: Send notifications when prayer times approach
-4. **Calendar View**: Show prayer times for the entire month in a calendar view
-5. **Offline Support**: Improve offline functionality with cached prayer times data
-6. **Different Calculation Methods**: Support for various Islamic calculation methods (Hanafi, Shafi, etc.)
+---
 
-## Screenshots
+## Architecture
 
-(Screenshots will be added as the project progresses)
+```
+src/
+  lib/          prayerTimes, dates + Hijri, store, stats, types  (pure, fully tested)
+  data/         surahs, locations, dhikr presets, du'a library
+  hooks/        app state, prayer times, notifications
+  components/   layout, shared UI, feature components
+  pages/        Dashboard, Prayer, Qur'an, Dhikr, Du'a, History, Settings
+  theme/        Chakra theme, palette and semantic tokens
+```
 
-## Contributing
+**State.** All application state lives in a single validated, versioned document under the
+`abadaat:state` key. Reads and writes go through `src/lib/store.ts`, which sanitises anything
+it loads — corrupt or hostile data can never crash the app. Data written by earlier versions
+(the `prayerData_*`, `quran_entries_*`, `dhikrData`, `dua_entries_*` keys) is migrated
+automatically on first load and left in place.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+**Derived values.** Streaks, totals and chart series are pure functions of stored days
+(`src/lib/stats.ts`). Nothing is cached, so the displayed numbers cannot drift from the data.
 
-## License
+---
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+## Testing
+
+```bash
+npm test
+```
+
+166 tests across seven suites: the astronomy and calendar maths, the store and its migrations,
+derived statistics, the static data tables, every page, and the app shell. Several are explicit
+regression tests for defects fixed in this version — deterministic prayer times, per-day dhikr
+counters, non-inflating Qur'an totals, a streak that survives a day in progress, a du'a page
+that no longer violates the rules of hooks, and navigation that exists on mobile.
+
+---
+
+## Privacy
+
+All data stays in this browser's local storage. Nothing is transmitted anywhere. Clearing your
+browser data will delete it, so export a backup from **Settings → Your data** first.
+
+---
 
 ## Acknowledgements
 
-- Inspired by the need for Muslims to track their worship activities
-- Thanks to timeanddate.com for providing astronomical data for Milton Keynes
-- Thanks to Duas.org and other Islamic resources for du'a references
-- Thanks to the open-source community for providing the tools and libraries used in this project
+- Prayer time calculation follows the approach used by [PrayTimes](http://praytimes.org/).
+- Du'a texts and links reference [Duas.org](https://www.duas.org/) and
+  [Al-Islam.org](https://www.al-islam.org/).
+
+## Licence
+
+MIT.
