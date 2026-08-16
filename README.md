@@ -5,6 +5,8 @@ with prayer times computed from the sun's position for any location on earth.
 
 Everything is stored in your own browser. There is no account, no server and no analytics.
 
+**Live app: [abadaat.netlify.app](https://abadaat.netlify.app/)**
+
 ---
 
 ## Features
